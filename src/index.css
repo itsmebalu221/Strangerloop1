@@ -1,1 +1,224 @@
 @import "tailwindcss";
+
+@theme {
+  --color-ink: #0b2a26;
+  --color-pine: #123b34;
+  --color-deep: #071f1b;
+  --color-moss: #3e6b5f;
+  --color-sage: #7fa294;
+  --color-mist: #eef4ef;
+  --color-fog: #dfe9e1;
+  --color-paper: #fbfdfa;
+  --color-line: #d3e1d7;
+  --color-lime: #d7f24e;
+  --color-limedeep: #a8c92f;
+  --color-em: #0f8a6a;
+  --color-emdeep: #0b6b52;
+  --color-coral: #e5484d;
+  --color-amberx: #efa33c;
+  --color-tealx: #0e7490;
+
+  --font-display: "Bricolage Grotesque", "Figtree", sans-serif;
+  --font-body: "Figtree", "Segoe UI", sans-serif;
+  --font-mono: "Spline Sans Mono", ui-monospace, monospace;
+
+  --shadow-lift: 0 1px 2px rgb(11 42 38 / 0.06), 0 8px 24px -12px rgb(11 42 38 / 0.25);
+  --shadow-pop: 0 2px 6px rgb(11 42 38 / 0.08), 0 24px 48px -16px rgb(11 42 38 / 0.35);
+}
+
+html {
+  font-family: var(--font-body);
+  background: var(--color-mist);
+  color: var(--color-ink);
+  scroll-behavior: smooth;
+}
+
+::selection {
+  background: var(--color-lime);
+  color: var(--color-ink);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(11 42 38 / 0.25) transparent;
+}
+
+/* ---------- layered ambient background ---------- */
+.ambient {
+  background:
+    radial-gradient(1100px 520px at 85% -10%, rgb(215 242 78 / 0.16), transparent 60%),
+    radial-gradient(900px 600px at -10% 30%, rgb(15 138 106 / 0.12), transparent 55%),
+    radial-gradient(700px 500px at 60% 110%, rgb(14 116 144 / 0.1), transparent 60%),
+    var(--color-mist);
+}
+.dotgrid {
+  background-image: radial-gradient(rgb(11 42 38 / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+}
+.chat-ambient {
+  background:
+    radial-gradient(900px 480px at 80% -10%, rgb(215 242 78 / 0.07), transparent 55%),
+    radial-gradient(800px 500px at 0% 110%, rgb(15 138 106 / 0.14), transparent 55%),
+    repeating-radial-gradient(circle at 50% -20%, transparent 0 90px, rgb(215 242 78 / 0.025) 90px 92px),
+    var(--color-deep);
+}
+
+/* ---------- reusable surfaces ---------- */
+.card {
+  background: var(--color-paper);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lift);
+}
+.input {
+  width: 100%;
+  background: var(--color-paper);
+  border: 1.5px solid var(--color-line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 15px;
+  color: var(--color-ink);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.input::placeholder {
+  color: var(--color-sage);
+}
+.input:focus {
+  border-color: var(--color-em);
+  box-shadow: 0 0 0 3px rgb(15 138 106 / 0.15);
+}
+.input-dark {
+  background: rgb(255 255 255 / 0.06);
+  border-color: rgb(255 255 255 / 0.14);
+  color: #eaf5ee;
+}
+.input-dark::placeholder {
+  color: rgb(234 245 238 / 0.4);
+}
+.input-dark:focus {
+  border-color: var(--color-lime);
+  box-shadow: 0 0 0 3px rgb(215 242 78 / 0.15);
+}
+.mono-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1.5px solid var(--color-line);
+  background: var(--color-paper);
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-pine);
+  transition: all 0.15s;
+  cursor: pointer;
+  user-select: none;
+}
+.chip:hover {
+  border-color: var(--color-em);
+  transform: translateY(-1px);
+}
+.chip-on {
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+  color: var(--color-lime);
+}
+.chip-on:hover {
+  border-color: var(--color-ink);
+}
+
+/* ---------- motion ---------- */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes popIn {
+  0% { opacity: 0; transform: scale(0.92); }
+  70% { transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes slideRight {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes ringPulse {
+  0% { transform: scale(0.5); opacity: 0.9; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes marqueeX {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes typingDot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+@keyframes softPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@keyframes floaty {
+  0%, 100% { transform: translateY(0) rotate(var(--rot, 0deg)); }
+  50% { transform: translateY(-10px) rotate(var(--rot, 0deg)); }
+}
+@keyframes scanY {
+  0% { top: 6%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { top: 92%; opacity: 0; }
+}
+@keyframes flashRow {
+  0% { background: rgb(215 242 78 / 0.35); }
+  100% { background: transparent; }
+}
+@keyframes shakeX {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+.anim-fade-up { animation: fadeUp 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.anim-pop { animation: popIn 0.32s cubic-bezier(0.2, 0.7, 0.3, 1.2) both; }
+.anim-slide-right { animation: slideRight 0.35s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.anim-marquee { animation: marqueeX 36s linear infinite; }
+.anim-soft-pulse { animation: softPulse 1.6s ease-in-out infinite; }
+.anim-floaty { animation: floaty 5s ease-in-out infinite; }
+.anim-shake { animation: shakeX 0.4s ease both; }
+.typing-dot { animation: typingDot 1.1s ease-in-out infinite; }
+.radar-ring { animation: ringPulse 2.2s cubic-bezier(0.2, 0.6, 0.4, 1) infinite; }
+.flash-row { animation: flashRow 1.2s ease-out both; }
+
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.6s cubic-bezier(0.2, 0.7, 0.3, 1), transform 0.6s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.reveal.is-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.btn-press { transition: transform 0.12s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s; }
+.btn-press:hover { transform: translateY(-1.5px); }
+.btn-press:active { transform: translateY(1px) scale(0.99); }
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-em);
+  outline-offset: 2px;
+}
