@@ -2,19 +2,7 @@
    In the Express deployment these peers are simply other real connected clients;
    the engine contract (openers, replies, pacing) stays identical. */
 
-export interface PersonaDef {
-  username: string;
-  age: number;
-  gender: "male" | "female" | "nonbinary";
-  country: string;
-  langs: string[];
-  interests: string[];
-  convTypes: string[];
-  bio: string;
-  hue: number;
-}
-
-export const PERSONAS: PersonaDef[] = [
+export const PERSONAS = [
   { username: "Aisha", age: 24, gender: "female", country: "India", langs: ["English", "Hindi"], interests: ["Programming", "Artificial Intelligence", "Music"], convTypes: ["Coding", "Casual"], bio: "Backend dev by day, lo-fi playlists by night.", hue: 160 },
   { username: "Rahul", age: 27, gender: "male", country: "India", langs: ["English", "Hindi", "Telugu"], interests: ["PC Gaming", "Esports", "Technology"], convTypes: ["Gaming", "Casual"], bio: "Chasing rank in everything I play.", hue: 20 },
   { username: "Sarah", age: 29, gender: "female", country: "United Kingdom", langs: ["English"], interests: ["Movies", "Books", "Music"], convTypes: ["Movies", "Casual"], bio: "Will absolutely spoil the ending if you ask nicely.", hue: 320 },
@@ -31,14 +19,14 @@ export const PERSONAS: PersonaDef[] = [
   { username: "Omar", age: 30, gender: "male", country: "UAE", langs: ["English"], interests: ["Startups", "Networking", "Fitness"], convTypes: ["Networking", "General"], bio: "Founder meetups in Dubai. Say hi if you're building.", hue: 60 },
 ];
 
-export function dobFromAge(age: number): string {
+export function dobFromAge(age) {
   const y = new Date().getFullYear() - age;
   return `${y - 1}-11-${String(10 + (age % 18)).padStart(2, "0")}`;
 }
 
 /* ---------------- conversation starters ---------------- */
 
-const STARTERS: Record<string, string> = {
+const STARTERS = {
   Programming: "What are you currently building?",
   "Artificial Intelligence": "What's the coolest thing AI has done for you lately?",
   "PC Gaming": "What game are you playing right now?",
@@ -62,16 +50,14 @@ const STARTERS: Record<string, string> = {
 };
 export const DEFAULT_STARTER = "What's something you could talk about for hours?";
 
-export function starterFor(interestNames: string[]): string {
+export function starterFor(interestNames) {
   for (const n of interestNames) if (STARTERS[n]) return STARTERS[n];
   return DEFAULT_STARTER;
 }
 
 /* ---------------- reply engine ---------------- */
 
-type Bucket = "code" | "ai" | "gaming" | "movies" | "music" | "travel" | "food" | "fitness" | "books" | "anime" | "startups" | "photo" | "science" | "debate" | "study" | "tech";
-
-const BUCKET_OF: Record<string, Bucket> = {
+const BUCKET_OF = {
   Programming: "code", "Web Development": "code", "Mobile Development": "code", "Game Development": "code", Cybersecurity: "code",
   "Artificial Intelligence": "ai", Robotics: "ai",
   "PC Gaming": "gaming", "Mobile Gaming": "gaming", "Console Gaming": "gaming", Esports: "gaming",
@@ -89,7 +75,7 @@ const BUCKET_OF: Record<string, Bucket> = {
   Friendship: "music", "Casual Conversation": "travel", Relationships: "books", General: "travel", Coding: "code", Gaming: "gaming", Study: "study", Casual: "travel",
 };
 
-const LINES: Record<Bucket, string[]> = {
+const LINES = {
   code: [
     "I've been deep in a side project lately — a little CLI tool that refuses to stay small.",
     "Honestly the best part of coding is when the bug turns out to be ONE character.",
@@ -192,7 +178,7 @@ const ACKS = ["haha true", "exactly!", "ok that's a take 😄", "same honestly",
 const RETURN_Q = ["what got you into that?", "how long have you been into it?", "what's the best part of it for you?", "where would you tell a beginner to start?", "and what do you do when you're not doing that?"];
 const GREET = ["hey! good timing, I just sat down", "heyy how's your day going?", "hello hello 👋", "hey, you caught me mid-coffee"];
 
-const KEYWORDS: Array<[RegExp, Bucket]> = [
+const KEYWORDS = [
   [/\b(code|coding|program|develop|javascript|python|app|software|bug)\b/, "code"],
   [/\b(ai|ml|model|gpt|neural|agent|llm)\b/, "ai"],
   [/\b(game|gaming|play|esport|rank|match|console)\b/, "gaming"],
@@ -210,9 +196,7 @@ const KEYWORDS: Array<[RegExp, Bucket]> = [
   [/\b(study|exam|learn|math|college|school)\b/, "study"],
 ];
 
-export interface ReplyPlan { texts: string[]; typingMs: number }
-
-export function buildOpener(sharedNames: string[], username: string): ReplyPlan {
+export function buildOpener(sharedNames, username) {
   const shared = sharedNames.length ? sharedNames : ["good conversation"];
   const q = starterFor(sharedNames);
   const open = `hey ${username}! I saw we both like ${shared.slice(0, 2).join(" and ")} — `;
@@ -220,11 +204,11 @@ export function buildOpener(sharedNames: string[], username: string): ReplyPlan 
   return { texts, typingMs: 1400 + texts.join("").length * 18 };
 }
 
-export function buildReply(personaInterests: string[], country: string, userText: string, turn: number, username: string): ReplyPlan {
+export function buildReply(personaInterests, country, userText, turn, username) {
   const t = userText.toLowerCase().trim();
-  let texts: string[];
+  let texts;
 
-  const bucket: Bucket | null = (() => {
+  const bucket = (() => {
     for (const [re, b] of KEYWORDS) if (re.test(t)) return b;
     for (const interest of personaInterests) {
       const b = BUCKET_OF[interest];
@@ -257,29 +241,29 @@ export function buildReply(personaInterests: string[], country: string, userText
   return { texts, typingMs };
 }
 
-export function nextProbability(turn: number, recentShortCount: number): number {
+export function nextProbability(turn, recentShortCount) {
   if (recentShortCount >= 3 && turn > 3) return 0.3;
   if (turn >= 9) return Math.min(0.22, 0.045 * (turn - 7));
   return 0;
 }
 
-export function connectionAcceptChance(sharedCount: number): number {
+export function connectionAcceptChance(sharedCount) {
   if (sharedCount >= 2) return 0.85;
   if (sharedCount === 1) return 0.6;
   return 0.3;
 }
 
-function lineFrom(b: Bucket): string {
+function lineFrom(b) {
   return pickOf(LINES[b]);
 }
-function randomBucket(interests: string[]): Bucket {
+function randomBucket(interests) {
   const b = BUCKET_OF[pickOf(interests)] ?? "travel";
   return b;
 }
-function topicNoun(b: Bucket): string {
-  const map: Record<Bucket, string> = { code: "a tiny side project", ai: "these new AI agents", gaming: "my ranked grind", movies: "that film I rewatched", music: "this playlist", travel: "a trip I'm planning", food: "a recipe disaster", fitness: "my morning run", books: "this book", anime: "this season's lineup", startups: "an idea I'm validating", photo: "a photo walk", science: "a rabbit hole", debate: "a take I'm sharpening", study: "my flashcards", tech: "a gadget review" };
+function topicNoun(b) {
+  const map = { code: "a tiny side project", ai: "these new AI agents", gaming: "my ranked grind", movies: "that film I rewatched", music: "this playlist", travel: "a trip I'm planning", food: "a recipe disaster", fitness: "my morning run", books: "this book", anime: "this season's lineup", startups: "an idea I'm validating", photo: "a photo walk", science: "a rabbit hole", debate: "a take I'm sharpening", study: "my flashcards", tech: "a gadget review" };
   return map[b];
 }
-function pickOf<T>(arr: T[]): T {
+function pickOf(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }

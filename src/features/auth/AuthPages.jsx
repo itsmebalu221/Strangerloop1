@@ -3,22 +3,21 @@ import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { ApiError } from "../../lib/errors";
-import type { Gender, ReferenceData } from "../../lib/types";
 import { useAuth } from "../../state/auth";
 import { useToast } from "../../state/toast";
 import { Button, Field } from "../../components/ui";
 import { Logo, IconArrowLeft, IconChevronRight, IconKey, IconCheck, IconEye } from "../../components/icons";
-import { cx, ageFromDob } from "../../lib/utils";
+import { ageFromDob, cx } from "../../lib/utils";
 
 const COUNTRIES = ["India", "United States", "United Kingdom", "Germany", "Japan", "Brazil", "Singapore", "Canada", "Spain", "Turkey", "Nigeria", "UAE", "Australia", "France"];
-const GENDERS: Array<{ value: Gender; label: string }> = [
+const GENDERS = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
   { value: "nonbinary", label: "Non-binary / Other" },
   { value: "undisclosed", label: "Prefer not to say" },
 ];
 
-function AuthFrame({ children, side }: { children: React.ReactNode; side: React.ReactNode }) {
+function AuthFrame({ children, side }) {
   return (
     <div className="ambient noise relative flex min-h-screen">
       <div className="relative hidden w-[44%] flex-col justify-between overflow-hidden bg-ink p-10 text-mist lg:flex">
@@ -39,7 +38,7 @@ function AuthFrame({ children, side }: { children: React.ReactNode; side: React.
   );
 }
 
-function errText(e: unknown): string {
+function errText(e) {
   if (e instanceof ApiError) return e.message;
   return "Something went wrong — try again";
 }
@@ -54,15 +53,15 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"login" | "forgot" | "reset">("login");
-  const [forgotNote, setForgotNote] = useState<string | null>(null);
-  const [devToken, setDevToken] = useState<string | null>(null);
+  const [error, setError] = useState(null);
+  const [mode, setMode] = useState("login");
+  const [forgotNote, setForgotNote] = useState(null);
+  const [devToken, setDevToken] = useState(null);
   const [newPassword, setNewPassword] = useState("");
 
   if (status === "authenticated") return <Navigate to="/home" replace />;
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
@@ -81,7 +80,7 @@ export function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.post<{ note: string; devToken: string | null }>("/auth/forgot-password", { email });
+      const r = await api.post("/auth/forgot-password", { email });
       setForgotNote(r.note);
       setDevToken(r.devToken);
       if (r.devToken) setMode("reset");
@@ -218,16 +217,16 @@ export function RegisterPage() {
   const { status, register } = useAuth();
   const { push } = useToast();
   const navigate = useNavigate();
-  const reference = useQuery({ queryKey: ["reference"], queryFn: () => api.get<ReferenceData>("/reference") });
+  const reference = useQuery({ queryKey: ["reference"], queryFn: () => api.get("/reference") });
 
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [f, setF] = useState({ email: "", username: "", password: "", dob: "", gender: "" as Gender | "", country: "", bio: "" });
-  const [interests, setInterests] = useState<string[]>([]);
-  const [langs, setLangs] = useState<string[]>([]);
-  const [cts, setCts] = useState<string[]>([]);
-  const [genders, setGenders] = useState<string[]>(["anyone"]);
+  const [error, setError] = useState(null);
+  const [f, setF] = useState({ email: "", username: "", password: "", dob: "", gender: "", country: "", bio: "" });
+  const [interests, setInterests] = useState([]);
+  const [langs, setLangs] = useState([]);
+  const [cts, setCts] = useState([]);
+  const [genders, setGenders] = useState(["anyone"]);
   const [ageMin, setAgeMin] = useState(18);
   const [ageMax, setAgeMax] = useState(34);
 
@@ -235,17 +234,17 @@ export function RegisterPage() {
   const age = f.dob ? ageFromDob(f.dob) : null;
 
   const byCategory = useMemo(() => {
-    const map = new Map<string, typeof ref extends undefined ? never : NonNullable<typeof ref>["interests"]>();
+    const map = new Map();
     for (const i of ref?.interests ?? []) {
       if (!map.has(i.category)) map.set(i.category, []);
-      map.get(i.category)!.push(i);
+      map.get(i.category).push(i);
     }
     return [...map.entries()];
   }, [ref]);
 
   if (status === "authenticated") return <Navigate to="/home" replace />;
 
-  const toggle = (arr: string[], set: (v: string[]) => void, id: string, max = 12) => {
+  const toggle = (arr, set, id, max = 12) => {
     if (arr.includes(id)) set(arr.filter((x) => x !== id));
     else if (arr.length < max) set([...arr, id]);
   };
@@ -349,7 +348,7 @@ export function RegisterPage() {
                   <input className="input" type="date" value={f.dob} max={new Date(Date.now() - 18 * 365.25 * 86400000).toISOString().slice(0, 10)} onChange={(e) => setF({ ...f, dob: e.target.value })} />
                 </Field>
                 <Field label="Gender">
-                  <select className="input" value={f.gender} onChange={(e) => setF({ ...f, gender: e.target.value as Gender })}>
+                  <select className="input" value={f.gender} onChange={(e) => setF({ ...f, gender: e.target.value })}>
                     <option value="">Select…</option>
                     {GENDERS.map((g) => (
                       <option key={g.value} value={g.value}>{g.label}</option>

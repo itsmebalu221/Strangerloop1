@@ -2,7 +2,6 @@
    account deletion with the retention policy (reports/moderation preserved,
    identity anonymized, auth material destroyed). */
 
-import type { DB, Gender, GenderPref, Preferences, ReferenceData, SelfUser, UserRecord } from "../lib/types";
 import { nowIso, uid } from "../lib/utils";
 import { getDB, mutate, userById, userByLower, toPublic, activeConversationFor } from "./db";
 import { ValidationError, NotFoundError } from "../lib/errors";
@@ -11,35 +10,24 @@ import { toSelf, requireUser } from "./auth.service";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
-export function referenceData(): ReferenceData {
+export function referenceData() {
   const d = getDB();
   return { interests: d.interests, languages: d.languages, conversationTypes: d.conversationTypes };
 }
 
-export function getProfile(userId: string): SelfUser {
+export function getProfile(userId) {
   const d = getDB();
   return toSelf(d, requireUser(d, userId));
 }
 
-export function publicProfileByUsername(username: string) {
+export function publicProfileByUsername(username) {
   const d = getDB();
   const u = userByLower(d, username.toLowerCase());
   if (!u || u.status === "DELETED") throw NotFoundError("Profile not found");
   return toPublic(d, u);
 }
 
-export interface ProfilePatch {
-  username?: string;
-  bio?: string | null;
-  gender?: Gender;
-  country?: string;
-  languageIds?: string[];
-  interestIds?: string[];
-  convTypeIds?: string[];
-  avatarHue?: number;
-}
-
-export function updateProfile(userId: string, patch: ProfilePatch): SelfUser {
+export function updateProfile(userId, patch) {
   return mutate((d) => {
     const u = requireUser(d, userId);
     if (patch.username !== undefined) {
@@ -72,17 +60,17 @@ export function updateProfile(userId: string, patch: ProfilePatch): SelfUser {
   });
 }
 
-export function getPreferences(userId: string): Preferences {
+export function getPreferences(userId) {
   const d = getDB();
   return requireUser(d, userId).prefs;
 }
 
-export function updatePreferences(userId: string, patch: Partial<Preferences>): Preferences {
+export function updatePreferences(userId, patch) {
   return mutate((d) => {
     const u = requireUser(d, userId);
     if (patch.genders !== undefined) {
       if (!patch.genders.length) throw ValidationError("Pick at least one gender preference", "genders");
-      u.prefs.genders = patch.genders as GenderPref[];
+      u.prefs.genders = patch.genders;
     }
     if (patch.ageMin !== undefined) u.prefs.ageMin = Math.max(18, Math.min(patch.ageMin, 70));
     if (patch.ageMax !== undefined) u.prefs.ageMax = Math.max(18, Math.min(patch.ageMax, 70));
@@ -97,7 +85,7 @@ export function updatePreferences(userId: string, patch: Partial<Preferences>): 
    Anonymized: username, email, bio, dob. Destroyed: sessions, refresh tokens,
    queue presence. Preserved: reports & moderation history (legal retention),
    aggregate analytics. */
-export function deleteAccount(userId: string): void {
+export function deleteAccount(userId) {
   mutate((d) => {
     const u = userById(d, userId);
     if (!u) throw NotFoundError("Account not found");

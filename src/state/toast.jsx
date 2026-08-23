@@ -1,35 +1,23 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import { cx } from "../lib/utils";
 
-export type ToastKind = "success" | "error" | "info" | "warn";
+/* Toast kinds: success | error | info | warn */
 
-interface Toast {
-  id: number;
-  kind: ToastKind;
-  title: string;
-  body?: string;
-}
-
-interface ToastContextValue {
-  push: (kind: ToastKind, title: string, body?: string) => void;
-}
-
-const ToastContext = createContext<ToastContextValue | null>(null);
+const ToastContext = createContext(null);
 
 let nextId = 1;
 
-const KIND_STYLES: Record<ToastKind, string> = {
+const KIND_STYLES = {
   success: "border-em/40 bg-em text-paper",
   error: "border-coral/40 bg-coral text-paper",
   warn: "border-amberx/50 bg-ink text-lime",
   info: "border-pine/30 bg-ink text-paper",
 };
 
-export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
+export function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
 
-  const push = useCallback((kind: ToastKind, title: string, body?: string) => {
+  const push = useCallback((kind, title, body) => {
     const id = nextId++;
     setToasts((t) => [...t.slice(-3), { id, kind, title, body }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4600);
@@ -59,7 +47,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useToast(): ToastContextValue {
+export function useToast() {
   const ctx = useContext(ToastContext);
   if (!ctx) throw new Error("useToast must be used within ToastProvider");
   return ctx;

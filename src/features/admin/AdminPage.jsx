@@ -2,37 +2,16 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import type { AuditRecord, ReportRecord, Risk } from "../../lib/types";
 import { ApiError } from "../../lib/errors";
 import { useAuth } from "../../state/auth";
 import { useToast } from "../../state/toast";
 import { AppShell } from "../../components/shell";
 import { Avatar, Badge, Bars, Button, ErrorState, LoadingBlock, Modal, Sparkline } from "../../components/ui";
-import { Logo, IconGavel, IconUsers, IconFlag, IconChart, IconSearch, IconWarn, IconArrowLeft } from "../../components/icons";
+import { IconGavel, IconUsers, IconFlag, IconChart, IconSearch, IconWarn, IconArrowLeft } from "../../components/icons";
 import { cx, timeAgo } from "../../lib/utils";
 
-interface Overview {
-  online: number; searching: number; activeConversations: number; totalUsers: number; newUsers7d: number; dau: number;
-  matchRate: number; avgConversationSec: number; openReports: number; banned: number; suspended: number;
-}
-interface Analytics {
-  days: Array<{ date: string; signups: number; searches: number; matches: number; conversations: number; reports: number }>;
-  retention: { d1: number; d7: number; d30: number };
-  outcomes: { next: number; blocked: number; reported: number; mutualConnections: number };
-  scoreHistogram: number[];
-}
-interface UserRow {
-  user: { id: string; username: string; avatarHue: number; country: string; ageRange: string };
-  email: string; status: string; role: string; warnCount: number; createdAt: string; lastActiveAt: string; simulated: boolean;
-}
-interface ReportRow extends ReportRecord {
-  reporterName: string; reportedName: string;
-  context: Array<{ sender: string; content: string; at: string }>;
-  priorViolations: number;
-}
-
-const RISK_TONE: Record<Risk, "green" | "amber" | "red" | "gray"> = { LOW: "green", SUSPICIOUS: "amber", HIGH: "amber", SEVERE: "red" };
-const STATUS_TONE: Record<string, "green" | "gray" | "red" | "amber"> = { ACTIVE: "green", SUSPENDED: "amber", BANNED: "red", PENDING_VERIFICATION: "gray", DELETED: "gray" };
+const RISK_TONE = { LOW: "green", SUSPICIOUS: "amber", HIGH: "amber", SEVERE: "red" };
+const STATUS_TONE = { ACTIVE: "green", SUSPENDED: "amber", BANNED: "red", PENDING_VERIFICATION: "gray", DELETED: "gray" };
 
 const TABS = [
   { id: "overview", label: "Overview", icon: <IconChart width={15} height={15} /> },
@@ -74,15 +53,15 @@ export default function AdminPage() {
 }
 
 function OverviewTab() {
-  const ov = useQuery({ queryKey: ["admin-overview"], queryFn: () => api.get<Overview>("/admin/overview"), refetchInterval: 20_000 });
-  const an = useQuery({ queryKey: ["admin-analytics"], queryFn: () => api.get<Analytics>("/admin/analytics") });
+  const ov = useQuery({ queryKey: ["admin-overview"], queryFn: () => api.get("/admin/overview"), refetchInterval: 20_000 });
+  const an = useQuery({ queryKey: ["admin-analytics"], queryFn: () => api.get("/admin/analytics") });
 
   if (ov.isLoading) return <LoadingBlock label="crunching numbers" />;
   if (ov.isError || !ov.data) return <ErrorState message="Couldn't load overview." onRetry={() => ov.refetch()} />;
   const o = ov.data;
   const days = an.data?.days ?? [];
 
-  const cards: Array<[string, string | number, string]> = [
+  const cards = [
     ["Online now", o.online, "live"],
     ["Searching", o.searching, "in queue"],
     ["Active conversations", o.activeConversations, "right now"],
@@ -121,7 +100,7 @@ function OverviewTab() {
           <div className="card p-5">
             <span className="font-display text-[15px] font-bold">Retention</span>
             <div className="mt-3 grid grid-cols-3 gap-2">
-              {an.data ? ([["D1", an.data.retention.d1], ["D7", an.data.retention.d7], ["D30", an.data.retention.d30]] as const).map(([l, v]) => (
+              {an.data ? [["D1", an.data.retention.d1], ["D7", an.data.retention.d7], ["D30", an.data.retention.d30]].map(([l, v]) => (
                 <div key={l} className="rounded-xl border border-line bg-mist/60 p-3 text-center">
                   <div className="font-display text-[22px] font-bold text-em">{v}%</div>
                   <div className="mono-label text-[8.5px] text-sage">{l}</div>
@@ -159,7 +138,7 @@ function OverviewTab() {
   );
 }
 
-function OutcomeRow({ label, value, color }: { label: string; value: number; color: string }) {
+function OutcomeRow({ label, value, color }) {
   return (
     <div className="rounded-xl border border-line bg-mist/60 p-3">
       <div className="font-display text-[22px] font-bold" style={{ color }}>{value}</div>
@@ -168,23 +147,23 @@ function OutcomeRow({ label, value, color }: { label: string; value: number; col
   );
 }
 
-function UsersTab({ actorId }: { actorId: string }) {
+function UsersTab({ actorId }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
-  const [selected, setSelected] = useState<UserRow | null>(null);
+  const [selected, setSelected] = useState(null);
   const [note, setNote] = useState("");
   const { push } = useToast();
   const qc = useQueryClient();
 
-  const users = useQuery({ queryKey: ["admin-users", q, status], queryFn: () => api.get<{ items: UserRow[] }>(`/admin/users?q=${encodeURIComponent(q)}${status ? `&status=${status}` : ""}`) });
+  const users = useQuery({ queryKey: ["admin-users", q, status], queryFn: () => api.get(`/admin/users?q=${encodeURIComponent(q)}${status ? `&status=${status}` : ""}`) });
   const detail = useQuery({
     queryKey: ["admin-user-detail", selected?.user.id],
-    queryFn: () => api.get<{ moderationHistory: Array<{ action: string; reason: string; risk: string; createdAt: string }>; reportsAgainst: ReportRecord[]; activeSessions: number; conversationCount: number }>("/admin/users/" + selected!.user.id),
+    queryFn: () => api.get("/admin/users/" + selected.user.id),
     enabled: !!selected,
   });
 
   const act = useMutation({
-    mutationFn: (vars: { id: string; action: string }) => api.post(`/admin/users/${vars.id}/action`, { action: vars.action, note: note || null }),
+    mutationFn: (vars) => api.post(`/admin/users/${vars.id}/action`, { action: vars.action, note: note || null }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
       qc.invalidateQueries({ queryKey: ["admin-user-detail"] });
@@ -259,7 +238,7 @@ function UsersTab({ actorId }: { actorId: string }) {
                 {(detail.data?.moderationHistory ?? []).length === 0 && <p className="text-[12px] text-sage">Clean record.</p>}
                 {detail.data?.moderationHistory.map((m, i) => (
                   <div key={i} className="flex items-center gap-2 text-[12px]">
-                    <Badge tone={RISK_TONE[m.risk as Risk] ?? "gray"}>{m.action}</Badge>
+                    <Badge tone={RISK_TONE[m.risk] ?? "gray"}>{m.action}</Badge>
                     <span className="truncate text-moss">{m.reason}</span>
                     <span className="mono-label ml-auto shrink-0 text-[8.5px] text-sage">{timeAgo(m.createdAt)}</span>
                   </div>
@@ -286,15 +265,15 @@ function UsersTab({ actorId }: { actorId: string }) {
 
 function ReportsTab() {
   const [status, setStatus] = useState("open");
-  const [selected, setSelected] = useState<ReportRow | null>(null);
+  const [selected, setSelected] = useState(null);
   const [note, setNote] = useState("");
   const { push } = useToast();
   const qc = useQueryClient();
 
-  const reports = useQuery({ queryKey: ["admin-reports", status], queryFn: () => api.get<{ items: ReportRow[] }>(`/admin/reports?status=${status}`) });
+  const reports = useQuery({ queryKey: ["admin-reports", status], queryFn: () => api.get(`/admin/reports?status=${status}`) });
 
   const act = useMutation({
-    mutationFn: (vars: { id: string; action: string }) => api.post(`/admin/reports/${vars.id}/action`, { action: vars.action, note: note || null }),
+    mutationFn: (vars) => api.post(`/admin/reports/${vars.id}/action`, { action: vars.action, note: note || null }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-reports"] });
       qc.invalidateQueries({ queryKey: ["admin-overview"] });
@@ -370,7 +349,7 @@ function ReportsTab() {
 }
 
 function AuditTab() {
-  const audit = useQuery({ queryKey: ["admin-audit"], queryFn: () => api.get<{ items: AuditRecord[] }>("/admin/audit") });
+  const audit = useQuery({ queryKey: ["admin-audit"], queryFn: () => api.get("/admin/audit") });
   if (audit.isLoading) return <LoadingBlock label="loading audit log" />;
   if (audit.isError || !audit.data) return <ErrorState message="Couldn't load audit log." onRetry={() => audit.refetch()} />;
   return (

@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { onEvent, onSocketState, socketSend, getSocketState } from "../../api/realtime";
-import type { SocketState } from "../../api/realtime";
-import type { ConversationView, MessageRecord, MessagePayload, TypingPayload, ConvEndedPayload, ConnectionView, ReportCategory } from "../../lib/types";
 import { ApiError } from "../../lib/errors";
 import { useAuth } from "../../state/auth";
 import { useToast } from "../../state/toast";
@@ -12,7 +10,7 @@ import { Avatar, Badge, Button, LiveDot, Modal, Spinner } from "../../components
 import { Logo, IconNext, IconLink, IconFlag, IconBlock, IconSend, IconArrowLeft, IconCheck, IconTrash, IconWarn, IconChevronDown, IconSpark } from "../../components/icons";
 import { cx, fmtTime } from "../../lib/utils";
 
-const REPORT_CATEGORIES: Array<{ value: ReportCategory; label: string }> = [
+const REPORT_CATEGORIES = [
   { value: "harassment", label: "Harassment" },
   { value: "spam", label: "Spam" },
   { value: "scam", label: "Scam" },
@@ -24,7 +22,7 @@ const REPORT_CATEGORIES: Array<{ value: ReportCategory; label: string }> = [
   { value: "other", label: "Other" },
 ];
 
-const END_COPY: Record<string, string> = {
+const END_COPY = {
   NEXT: "You moved on to a new conversation.",
   STRANGER_NEXT: "Your partner moved on. The queue is yours.",
   BLOCK: "This conversation was blocked.",
@@ -41,27 +39,27 @@ export default function ChatPage() {
 
   const convQuery = useQuery({
     queryKey: ["conversation", conversationId],
-    queryFn: () => api.get<ConversationView>(`/conversations/${conversationId}`),
+    queryFn: () => api.get(`/conversations/${conversationId}`),
     retry: false,
   });
   const connections = useQuery({
     queryKey: ["connections"],
-    queryFn: () => api.get<{ items: ConnectionView[] }>("/connections"),
+    queryFn: () => api.get("/connections"),
   });
 
-  const [messages, setMessages] = useState<MessageRecord[] | null>(null);
+  const [messages, setMessages] = useState(null);
   const [otherTyping, setOtherTyping] = useState(false);
-  const [socketState, setSocketState] = useState<SocketState>(getSocketState());
+  const [socketState, setSocketState] = useState(getSocketState());
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [nextBusy, setNextBusy] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [ended, setEnded] = useState<{ reason: string; byOther: boolean } | null>(null);
-  const [connectState, setConnectState] = useState<"none" | "pending" | "mutual">("none");
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ended, setEnded] = useState(null);
+  const [connectState, setConnectState] = useState("none");
+  const bottomRef = useRef(null);
+  const typingTimeout = useRef(null);
   const lastTypingAt = useRef(0);
 
   const view = convQuery.data;
@@ -81,7 +79,7 @@ export default function ChatPage() {
     let cancelled = false;
     (async () => {
       try {
-        const r = await api.get<{ items: MessageRecord[]; nextCursor: string | null }>(`/conversations/${conversationId}/messages?limit=80`);
+        const r = await api.get(`/conversations/${conversationId}/messages?limit=80`);
         if (!cancelled) setMessages(r.items);
       } catch {
         if (!cancelled) setMessages([]);
@@ -97,22 +95,20 @@ export default function ChatPage() {
     const offs = [
       onSocketState(setSocketState),
       onEvent("message:new", (p) => {
-        const { message } = p as MessagePayload;
+        const { message } = p;
         if (message.conversationId !== conversationId) return;
         setMessages((m) => (m && !m.some((x) => x.id === message.id) ? [...m, message] : m));
       }),
       onEvent("message:updated", (p) => {
-        const { message } = p as MessagePayload;
+        const { message } = p;
         if (message.conversationId !== conversationId) return;
         setMessages((m) => (m ? m.map((x) => (x.id === message.id ? message : x)) : m));
       }),
-      onEvent("typing", (p) => {
-        const t = p as TypingPayload;
+      onEvent("typing", (t) => {
         if (t.conversationId !== conversationId || !other || t.userId !== other.id) return;
         setOtherTyping(t.isTyping);
       }),
-      onEvent("conversation:ended", (p) => {
-        const e = p as ConvEndedPayload;
+      onEvent("conversation:ended", (e) => {
         if (e.conversationId !== conversationId) return;
         setOtherTyping(false);
         setEnded({ reason: e.reason ?? "DISCONNECT", byOther: e.byUserId !== null && e.byUserId !== user?.id });
@@ -153,7 +149,7 @@ export default function ChatPage() {
       await socketSend("message:send", { conversationId, content });
     } catch (e) {
       setDraft(content);
-      const err = e as ApiError;
+      const err = e;
       if (err.code === "CONVERSATION_ENDED") setEnded({ reason: "DISCONNECT", byOther: true });
       push("error", err.code === "MESSAGE_BLOCKED" ? "Message blocked" : "Couldn't send", err.message);
     } finally {
@@ -161,7 +157,7 @@ export default function ChatPage() {
     }
   }, [draft, sending, isActive, conversationId, push]);
 
-  const onDraftChange = (v: string) => {
+  const onDraftChange = (v) => {
     setDraft(v);
     if (!isActive) return;
     const now = Date.now();
@@ -179,7 +175,7 @@ export default function ChatPage() {
     if (nextBusy) return;
     setNextBusy(true);
     try {
-      const r = await api.post<{ status: "matched"; view: ConversationView } | { status: "searching" }>(`/conversations/${conversationId}/next`);
+      const r = await api.post(`/conversations/${conversationId}/next`);
       qc.invalidateQueries({ queryKey: ["conversations"] });
       if (r.status === "matched") {
         qc.setQueryData(["conversation", r.view.conversation.id], r.view);
@@ -195,7 +191,7 @@ export default function ChatPage() {
   };
 
   const connectMut = useMutation({
-    mutationFn: () => api.post<{ status: string }>(`/conversations/${conversationId}/connect`),
+    mutationFn: () => api.post(`/conversations/${conversationId}/connect`),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       if (r.status === "mutual") {
@@ -223,7 +219,7 @@ export default function ChatPage() {
   });
 
   /* report form state */
-  const [category, setCategory] = useState<ReportCategory>("harassment");
+  const [category, setCategory] = useState("harassment");
   const [details, setDetails] = useState("");
   const [alsoBlock, setAlsoBlock] = useState(true);
   const reportMut = useMutation({
@@ -237,7 +233,7 @@ export default function ChatPage() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: (messageId: string) => api.del(`/conversations/${conversationId}/messages/${messageId}`),
+    mutationFn: (messageId) => api.del(`/conversations/${conversationId}/messages/${messageId}`),
     onError: (e) => push("error", "Couldn't delete", e instanceof ApiError ? e.message : "Messages can be deleted within 2 minutes"),
   });
 
@@ -335,7 +331,7 @@ export default function ChatPage() {
               </div>
               {view.starter && messages && messages.length < 3 && isActive && (
                 <button
-                  onClick={() => onDraftChange(view.starter!)}
+                  onClick={() => onDraftChange(view.starter)}
                   className="mt-3 w-full rounded-xl border border-lime/30 bg-deep/50 px-4 py-2.5 text-[13.5px] font-semibold text-mist transition hover:border-lime hover:text-lime"
                 >
                   💬 {view.starter}

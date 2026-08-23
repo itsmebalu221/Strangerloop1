@@ -1,34 +1,34 @@
-export function cx(...parts: Array<string | false | null | undefined>): string {
+export function cx(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
-export function uid(): string {
+export function uid() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return "id-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 export const nowIso = () => new Date().toISOString();
 
-export function sleep(ms: number): Promise<void> {
+export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export function rand(min: number, max: number): number {
+export function rand(min, max) {
   return min + Math.random() * (max - min);
 }
 
-export function pick<T>(arr: T[]): T {
+export function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-export function chance(p: number): boolean {
+export function chance(p) {
   return Math.random() < p;
 }
 
 /* Deterministic non-cryptographic hash (FNV-1a derived).
    In the Express deployment this layer is replaced by Argon2id (passwords)
    and HMAC-SHA256 (token signing) with env-sourced secrets. */
-export function hashStr(s: string): string {
+export function hashStr(s) {
   let h1 = 0xdeadbeef;
   let h2 = 0x41c6ce57;
   for (let i = 0; i < s.length; i++) {
@@ -41,23 +41,23 @@ export function hashStr(s: string): string {
   return (h2 >>> 0).toString(16).padStart(8, "0") + (h1 >>> 0).toString(16).padStart(8, "0");
 }
 
-export function stretchHash(pw: string, salt: string): string {
+export function stretchHash(pw, salt) {
   let h = hashStr(`${salt}::${pw}::wavelength-kdf`);
   for (let i = 0; i < 400; i++) h = hashStr(h + salt + i);
   return h;
 }
 
 export const b64u = {
-  enc(s: string): string {
+  enc(s) {
     return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   },
-  dec(s: string): string {
+  dec(s) {
     const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
     return decodeURIComponent(escape(atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"))));
   },
 };
 
-export function ageFromDob(dob: string): number {
+export function ageFromDob(dob) {
   const d = new Date(dob);
   const now = new Date();
   let age = now.getFullYear() - d.getFullYear();
@@ -66,27 +66,27 @@ export function ageFromDob(dob: string): number {
   return age;
 }
 
-export function ageRangeOf(age: number): string {
+export function ageRangeOf(age) {
   if (age <= 24) return "18–24";
   if (age <= 34) return "25–34";
   if (age <= 44) return "35–44";
   return "45+";
 }
 
-export function initials(name: string): string {
+export function initials(name) {
   return name
     .split(/[\s_-]+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
+    .map((p) => p[0].toUpperCase())
     .join("");
 }
 
-export function hueBg(hue: number): string {
+export function hueBg(hue) {
   return `linear-gradient(135deg, hsl(${hue} 48% 38%), hsl(${(hue + 42) % 360} 52% 26%))`;
 }
 
-export function timeAgo(iso: string): string {
+export function timeAgo(iso) {
   const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
   if (s < 60) return `${s}s ago`;
   const m = Math.floor(s / 60);
@@ -98,21 +98,21 @@ export function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function fmtTime(iso: string): string {
+export function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
-export function fmtDuration(ms: number): string {
+export function fmtDuration(ms) {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function clamp(v: number, min: number, max: number): number {
+export function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
 }
 
-export function dayKey(offset = 0): string {
+export function dayKey(offset = 0) {
   const d = new Date(Date.now() - offset * 86400000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

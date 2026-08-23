@@ -1,40 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import type { SelfUser } from "../lib/types";
 import { api, getTokens, clearTokens, onSessionExpired, authEngine } from "../api/client";
 import { connectSocket, disconnectSocket } from "../api/realtime";
 
-export type AuthStatus =
-  | "booting"
-  | "unauthenticated"
-  | "authenticating"
-  | "authenticated"
-  | "refreshing"
-  | "logging_out";
+/* Auth status: booting | unauthenticated | authenticating | authenticated | refreshing | logging_out */
 
-interface AuthContextValue {
-  status: AuthStatus;
-  user: SelfUser | null;
-  login: (email: string, password: string) => Promise<SelfUser>;
-  register: (input: Record<string, unknown>) => Promise<SelfUser>;
-  logout: () => Promise<void>;
-  logoutAll: () => Promise<void>;
-  refreshUser: () => Promise<void>;
-  setUser: (u: SelfUser) => void;
-}
+const AuthContext = createContext(null);
 
-const AuthContext = createContext<AuthContextValue | null>(null);
-
-async function handshake(): Promise<void> {
+async function handshake() {
   const tokens = getTokens();
   if (tokens) {
     await connectSocket(tokens.accessToken, authEngine.verifyAccess);
   }
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<AuthStatus>("booting");
-  const [user, setUserState] = useState<SelfUser | null>(null);
+export function AuthProvider({ children }) {
+  const [status, setStatus] = useState("booting");
+  const [user, setUserState] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       try {
-        const { user: me } = await api.get<{ user: SelfUser }>("/auth/me");
+        const { user: me } = await api.get("/auth/me");
         if (cancelled) return;
         setUserState(me);
         setStatus("authenticated");
@@ -68,10 +49,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email, password) => {
     setStatus("authenticating");
     try {
-      const { user: u } = await api.post<{ user: SelfUser }>("/auth/login", { email, password });
+      const { user: u } = await api.post("/auth/login", { email, password });
       setUserState(u);
       setStatus("authenticated");
       await handshake();
@@ -82,10 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (input: Record<string, unknown>) => {
+  const register = useCallback(async (input) => {
     setStatus("authenticating");
     try {
-      const { user: u } = await api.post<{ user: SelfUser }>("/auth/register", input);
+      const { user: u } = await api.post("/auth/register", input);
       setUserState(u);
       setStatus("authenticated");
       await handshake();
@@ -120,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = useCallback(async () => {
     try {
-      const { user: me } = await api.get<{ user: SelfUser }>("/auth/me");
+      const { user: me } = await api.get("/auth/me");
       setUserState(me);
     } catch {
       /* session expired path is handled by the client */
@@ -135,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth(): AuthContextValue {
+export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;

@@ -1,7 +1,6 @@
 /* ChatService — conversations, authorized messaging over the socket layer,
    typing indicators, NEXT lifecycle, connect requests, stranger pacing. */
 
-import type { ConversationRecord, MessageRecord, ConversationView, RecentConversation, Interest } from "../lib/types";
 import { uid, nowIso, chance } from "../lib/utils";
 import { getDB, mutate, userById, toPublic, trackDay } from "./db";
 import { AppError, ValidationError, NotFoundError, AuthorizationError, ConflictError, RateLimitError } from "../lib/errors";
@@ -9,41 +8,41 @@ import { emitEvent, registerServerHandler } from "../api/realtime";
 import { requireUser } from "./auth.service";
 import { classifyMessage, logModeration, applySevereAutoAction, createConnection, connectionBetween, pushNotification } from "./safety.service";
 import { buildOpener, buildReply, nextProbability, connectionAcceptChance } from "./strangers";
-import { matchNow, search as queueSearch } from "./matching.service";
+import { matchNow, onMatchCreated, search as queueSearch } from "./matching.service";
 
 const MAX_MESSAGE_LENGTH = 1000;
-const sendTimestamps = new Map<string, number[]>();
-const convTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
-const convStats = new Map<string, { turn: number; shortStreak: number }>();
+const sendTimestamps = new Map();
+const convTimers = new Map();
+const convStats = new Map();
 
-function timers(convId: string): ReturnType<typeof setTimeout>[] {
+function timers(convId) {
   if (!convTimers.has(convId)) convTimers.set(convId, []);
-  return convTimers.get(convId)!;
+  return convTimers.get(convId);
 }
 
-function clearTimers(convId: string): void {
+function clearTimers(convId) {
   for (const t of convTimers.get(convId) ?? []) clearTimeout(t);
   convTimers.delete(convId);
   convStats.delete(convId);
 }
 
-function assertParticipant(conv: ConversationRecord, userId: string): void {
+function assertParticipant(conv, userId) {
   if (!conv.participantIds.includes(userId)) throw AuthorizationError("You are not a participant of this conversation");
 }
 
-function getConvOrThrow(d: ReturnType<typeof getDB>, convId: string, userId: string): ConversationRecord {
+function getConvOrThrow(d, convId, userId) {
   const conv = d.conversations.find((c) => c.id === convId);
   if (!conv) throw NotFoundError("Conversation not found");
   assertParticipant(conv, userId);
   return conv;
 }
 
-function sanitize(content: string): string {
+function sanitize(content) {
   // Plain text only — control characters stripped; React escapes rendering.
   return content.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim();
 }
 
-function checkThrottle(userId: string): void {
+function checkThrottle(userId) {
   const now = Date.now();
   const history = (sendTimestamps.get(userId) ?? []).filter((t) => now - t < 10_000);
   if (history.length >= 7) throw RateLimitError("You're sending messages too fast — take a breath");
@@ -55,7 +54,7 @@ function checkThrottle(userId: string): void {
 
 /* ---------------- messaging ---------------- */
 
-export function sendMessage(userId: string, conversationId: string, rawContent: string): MessageRecord {
+export function sendMessage(userId, conversationId, rawContent) {
   const content = sanitize(rawContent);
   if (!content) throw ValidationError("Message cannot be empty");
   if (content.length > MAX_MESSAGE_LENGTH) throw ValidationError(`Messages are limited to ${MAX_MESSAGE_LENGTH} characters`);
@@ -73,10 +72,10 @@ export function sendMessage(userId: string, conversationId: string, rawContent: 
     throw new AppError(451, "MESSAGE_BLOCKED", "Message removed by safety filters — keep it respectful.");
   }
 
-  const message: MessageRecord = { id: uid(), conversationId, senderId: userId, content, createdAt: nowIso(), deletedAt: null };
+  const message = { id: uid(), conversationId, senderId: userId, content, createdAt: nowIso(), deletedAt: null };
   mutate((dd) => {
     dd.messages.push(message);
-    const c = dd.conversations.find((x) => x.id === conversationId)!;
+    const c = dd.conversations.find((x) => x.id === conversationId);
     c.lastMessageAt = message.createdAt;
     if (classification.action === "WARN") {
       logModeration(userId, "system", "WARN", classification.reasons.join(","), "HIGH");
@@ -98,10 +97,9 @@ export function sendMessage(userId: string, conversationId: string, rawContent: 
   return message;
 }
 
-export function deleteMessage(userId: string, conversationId: string, messageId: string): MessageRecord {
+export function deleteMessage(userId, conversationId, messageId) {
   return mutate((d) => {
-    const conv = getConvOrThrow(d, conversationId, userId);
-    void conv;
+    getConvOrThrow(d, conversationId, userId);
     const msg = d.messages.find((m) => m.id === messageId && m.conversationId === conversationId);
     if (!msg) throw NotFoundError("Message not found");
     if (msg.senderId !== userId) throw AuthorizationError("You can only delete your own messages");
@@ -112,7 +110,7 @@ export function deleteMessage(userId: string, conversationId: string, messageId:
   });
 }
 
-export function broadcastTyping(userId: string, conversationId: string, isTyping: boolean): void {
+export function broadcastTyping(userId, conversationId, isTyping) {
   const d = getDB();
   const conv = getConvOrThrow(d, conversationId, userId);
   if (conv.state !== "ACTIVE") return;
@@ -121,12 +119,12 @@ export function broadcastTyping(userId: string, conversationId: string, isTyping
 
 /* ---------------- stranger pacing (embedded community engine) ---------------- */
 
-function otherOf(conv: ConversationRecord, userId: string): string {
+function otherOf(conv, userId) {
   return conv.participantIds[0] === userId ? conv.participantIds[1] : conv.participantIds[0];
 }
 
-function deliverAs(convId: string, senderId: string, text: string): void {
-  const message: MessageRecord = { id: uid(), conversationId: convId, senderId, content: text, createdAt: nowIso(), deletedAt: null };
+function deliverAs(convId, senderId, text) {
+  const message = { id: uid(), conversationId: convId, senderId, content: text, createdAt: nowIso(), deletedAt: null };
   mutate((d) => {
     d.messages.push(message);
     const c = d.conversations.find((x) => x.id === convId);
@@ -135,14 +133,13 @@ function deliverAs(convId: string, senderId: string, text: string): void {
   emitEvent("message:new", { message }, { conversationId: convId });
 }
 
-export function scheduleStrangerOpener(conv: ConversationRecord): void {
+export function scheduleStrangerOpener(conv) {
   const strangerId = conv.participantIds.find((id) => userById(getDB(), id)?.simulated);
   const humanId = conv.participantIds.find((id) => !userById(getDB(), id)?.simulated);
   if (!strangerId || !humanId) return;
   const d = getDB();
-  const stranger = userById(d, strangerId)!;
-  const human = userById(d, humanId)!;
-  const sharedNames = conv.sharedInterestIds.map((id) => d.interests.find((i) => i.id === id)?.name).filter(Boolean) as string[];
+  const human = userById(d, humanId);
+  const sharedNames = conv.sharedInterestIds.map((id) => d.interests.find((i) => i.id === id)?.name).filter(Boolean);
   const plan = buildOpener(sharedNames, human.username);
 
   const t0 = setTimeout(() => emitEvent("typing", { conversationId: conv.id, userId: strangerId, isTyping: true }, { conversationId: conv.id }), 1300);
@@ -158,7 +155,7 @@ export function scheduleStrangerOpener(conv: ConversationRecord): void {
   });
 }
 
-function scheduleStrangerReply(conv: ConversationRecord, senderId: string, userText: string): void {
+function scheduleStrangerReply(conv, senderId, userText) {
   const d = getDB();
   const strangerId = otherOf(conv, senderId);
   const stranger = userById(d, strangerId);
@@ -173,8 +170,8 @@ function scheduleStrangerReply(conv: ConversationRecord, senderId: string, userT
   for (const t of convTimers.get(conv.id) ?? []) clearTimeout(t);
   convTimers.set(conv.id, []);
 
-  const human = userById(d, senderId)!;
-  const sharedNames = conv.sharedInterestIds.map((id) => d.interests.find((i) => i.id === id)?.name).filter(Boolean) as string[];
+  const human = userById(d, senderId);
+  void human;
 
   if (chance(nextProbability(stats.turn, stats.shortStreak))) {
     const t = setTimeout(() => {
@@ -185,7 +182,7 @@ function scheduleStrangerReply(conv: ConversationRecord, senderId: string, userT
     return;
   }
 
-  const plan = buildReply(stranger.interestIds.map((id) => d.interests.find((i) => i.id === id)?.name ?? "").filter(Boolean), stranger.country, userText, stats.turn, human.username);
+  const plan = buildReply(stranger.interestIds.map((id) => d.interests.find((i) => i.id === id)?.name ?? "").filter(Boolean), stranger.country, userText, stats.turn, senderName(d, senderId));
   const typingStart = Math.max(500, plan.typingMs * 0.35);
   const t1 = setTimeout(() => {
     const c = getDB().conversations.find((x) => x.id === conv.id);
@@ -205,12 +202,16 @@ function scheduleStrangerReply(conv: ConversationRecord, senderId: string, userT
   });
 }
 
+function senderName(d, senderId) {
+  return userById(d, senderId)?.username ?? "friend";
+}
+
 /* ---------------- lifecycle ---------------- */
 
-export function endConversationInternal(conv: ConversationRecord, reason: NonNullable<ConversationRecord["endReason"]>, byUserId: string | null): void {
+export function endConversationInternal(conv, reason, byUserId) {
   clearTimers(conv.id);
   mutate((d) => {
-    const c = d.conversations.find((x) => x.id === conv.id)!;
+    const c = d.conversations.find((x) => x.id === conv.id);
     if (c.state !== "ACTIVE") return;
     c.state = reason === "BLOCK" ? "BLOCKED" : reason === "REPORT" ? "REPORTED" : "ENDED";
     c.endReason = reason;
@@ -219,7 +220,7 @@ export function endConversationInternal(conv: ConversationRecord, reason: NonNul
   emitEvent("conversation:ended", { conversationId: conv.id, reason, byUserId }, { conversationId: conv.id });
 }
 
-export function next(userId: string, conversationId: string): { status: "matched"; view: ConversationView } | { status: "searching" } {
+export function next(userId, conversationId) {
   const d = getDB();
   requireUser(d, userId);
   const conv = getConvOrThrow(d, conversationId, userId);
@@ -232,15 +233,15 @@ export function next(userId: string, conversationId: string): { status: "matched
   return { status: "searching" };
 }
 
-export function connectFromConversation(userId: string, conversationId: string): { status: "pending" | "mutual" | "requested"; chanceHint: number } {
+export function connectFromConversation(userId, conversationId) {
   const d = getDB();
   const conv = getConvOrThrow(d, conversationId, userId);
   const otherId = otherOf(conv, userId);
   const existing = connectionBetween(d, userId, otherId);
   if (existing) return { status: existing.status === "mutual" ? "mutual" : "requested", chanceHint: 1 };
 
-  const me = userById(d, userId)!;
-  const other = userById(d, otherId)!;
+  const me = userById(d, userId);
+  const other = userById(d, otherId);
   const sharedCount = me.interestIds.filter((i) => other.interestIds.includes(i)).length;
   const res = createConnection(userId, otherId);
   if (res.status === "mutual") return { status: "mutual", chanceHint: 1 };
@@ -250,7 +251,7 @@ export function connectFromConversation(userId: string, conversationId: string):
     const conn = connectionBetween(getDB(), userId, otherId);
     if (conn && conn.status === "pending" && conn.requestedBy === otherId) {
       mutate((dd) => {
-        const c = dd.connections.find((x) => x.id === conn.id)!;
+        const c = dd.connections.find((x) => x.id === conn.id);
         c.status = "mutual";
         c.acceptedAt = nowIso();
         pushNotification(dd, otherId, "connection", `${me.username} connected back`, "You're now mutual connections.");
@@ -266,22 +267,22 @@ export function connectFromConversation(userId: string, conversationId: string):
 
 /* ---------------- queries ---------------- */
 
-export function toView(conv: ConversationRecord, viewerId: string): ConversationView {
+export function toView(conv, viewerId) {
   const d = getDB();
   const otherId = otherOf(conv, viewerId);
   const other = userById(d, otherId);
   if (!other) throw NotFoundError("Conversation not found");
-  const shared = conv.sharedInterestIds.map((id) => d.interests.find((i) => i.id === id)).filter(Boolean) as Interest[];
+  const shared = conv.sharedInterestIds.map((id) => d.interests.find((i) => i.id === id)).filter(Boolean);
   return { conversation: conv, other: toPublic(d, other), shared, starter: conv.starterPrompt };
 }
 
-export function getConversation(userId: string, conversationId: string): ConversationView {
+export function getConversation(userId, conversationId) {
   const d = getDB();
   const conv = getConvOrThrow(d, conversationId, userId);
   return toView(conv, userId);
 }
 
-export function recentConversations(userId: string, limit = 6): RecentConversation[] {
+export function recentConversations(userId, limit = 6) {
   const d = getDB();
   return d.conversations
     .filter((c) => c.participantIds.includes(userId))
@@ -297,7 +298,7 @@ export function recentConversations(userId: string, limit = 6): RecentConversati
     });
 }
 
-export function getMessages(userId: string, conversationId: string, before: string | null, limit = 60): { items: MessageRecord[]; nextCursor: string | null } {
+export function getMessages(userId, conversationId, before, limit = 60) {
   const d = getDB();
   getConvOrThrow(d, conversationId, userId);
   let msgs = d.messages.filter((m) => m.conversationId === conversationId);
@@ -310,18 +311,17 @@ export function getMessages(userId: string, conversationId: string, before: stri
 
 /* ---------------- socket handlers ---------------- */
 
-export function registerSocketHandlers(): void {
-  registerServerHandler("message:send", async (payload: { conversationId: string; content: string }, userId: string) => {
+export function registerSocketHandlers() {
+  registerServerHandler("message:send", async (payload, userId) => {
     return { message: sendMessage(userId, payload.conversationId, payload.content) };
   });
-  registerServerHandler("typing", async (payload: { conversationId: string; isTyping: boolean }, userId: string) => {
+  registerServerHandler("typing", async (payload, userId) => {
     broadcastTyping(userId, payload.conversationId, payload.isTyping);
     return { ok: true };
   });
 }
 
 // Boot hook: schedule openers whenever a match with a simulated member is created.
-import { onMatchCreated } from "./matching.service";
 onMatchCreated((conv) => scheduleStrangerOpener(conv));
 
 // Re-export for the client bootstrap.

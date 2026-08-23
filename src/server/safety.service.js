@@ -2,40 +2,33 @@
    connections, notifications. Risk levels: LOW → SEVERE.
    Actions: ALLOW / FLAG / WARN / BLOCK_CONTENT / ESCALATE / SUSPEND / BAN. */
 
-import type { DB, PublicUser, ReportCategory, Risk, ModActionKind, MessageRecord } from "../lib/types";
 import { uid, nowIso, hashStr } from "../lib/utils";
 import { getDB, mutate, userById, toPublic, activeConversationBetween, trackDay } from "./db";
-import { AppError, ValidationError, NotFoundError, ConflictError } from "../lib/errors";
+import { AppError, ValidationError, NotFoundError } from "../lib/errors";
 import { emitEvent } from "../api/realtime";
 
 /* ---------------- message classification ---------------- */
 
-export interface Classification {
-  risk: Risk;
-  action: ModActionKind;
-  reasons: string[];
-}
-
-const SEVERE_PATTERNS: Array<[RegExp, string]> = [
+const SEVERE_PATTERNS = [
   [/\b(kill yourself|kys|i'?ll find you|find where you live|hurt you|beat you)\b/i, "threats"],
   [/\b(minor|underage|\b1[3-5]\b.*(year|yo)).*(meet|date|pics|pics)\b/i, "minor-safety"],
 ];
-const HIGH_PATTERNS: Array<[RegExp, string]> = [
+const HIGH_PATTERNS = [
   [/\b(gift card|bitcoin|crypto|western union|send money|pay me|cash ?app|guaranteed returns|investment)\b/i, "scam"],
   [/\b(send nudes|nudes|sexting|explicit pics|nsfw pics)\b/i, "explicit-content"],
   [/\b(whatsapp|telegram|snapchat|instagram|phone number|call me|email me|my number is)\b/i, "contact-solicitation"],
   [/\b(hate you|stupid (people|person)|shut up|you'?re (worthless|pathetic))\b/i, "harassment"],
 ];
-const SUSPICIOUS_PATTERNS: Array<[RegExp, string]> = [
+const SUSPICIOUS_PATTERNS = [
   [/(https?:\/\/|www\.)/i, "url"],
   [/\b(follow me|subscribe|my channel|promo code|discount code)\b/i, "promotion"],
 ];
 
-const recentSent = new Map<string, string[]>();
+const recentSent = new Map();
 
-export function classifyMessage(userId: string, content: string): Classification {
-  const reasons: string[] = [];
-  let risk: Risk = "LOW";
+export function classifyMessage(userId, content) {
+  const reasons = [];
+  let risk = "LOW";
 
   for (const [re, tag] of SEVERE_PATTERNS) if (re.test(content)) { reasons.push(tag); risk = "SEVERE"; }
   if (risk !== "SEVERE") {
@@ -55,17 +48,17 @@ export function classifyMessage(userId: string, content: string): Classification
     recentSent.set(userId, history.slice(-5));
   }
 
-  const action: ModActionKind = risk === "SEVERE" ? "BLOCK_CONTENT" : risk === "HIGH" ? "WARN" : risk === "SUSPICIOUS" ? "FLAG" : "ALLOW";
+  const action = risk === "SEVERE" ? "BLOCK_CONTENT" : risk === "HIGH" ? "WARN" : risk === "SUSPICIOUS" ? "FLAG" : "ALLOW";
   return { risk, action, reasons };
 }
 
-export function logModeration(userId: string, actorId: string, action: ModActionKind, reason: string, risk: Risk): void {
+export function logModeration(userId, actorId, action, reason, risk) {
   mutate((d) => {
     d.moderation.push({ id: uid(), userId, actorId, action, reason, risk, createdAt: nowIso() });
   });
 }
 
-export function applySevereAutoAction(userId: string, reasons: string[]): void {
+export function applySevereAutoAction(userId, reasons) {
   mutate((d) => {
     const u = userById(d, userId);
     if (!u || u.simulated) return;
@@ -98,7 +91,7 @@ export function applySevereAutoAction(userId: string, reasons: string[]): void {
 
 /* ---------------- blocks ---------------- */
 
-export function blockUser(blockerId: string, blockedId: string): { already: boolean } {
+export function blockUser(blockerId, blockedId) {
   if (blockerId === blockedId) throw ValidationError("You cannot block yourself");
   return mutate((d) => {
     const target = userById(d, blockedId);
@@ -120,7 +113,7 @@ export function blockUser(blockerId: string, blockedId: string): { already: bool
   });
 }
 
-export function unblockUser(blockerId: string, blockedId: string): void {
+export function unblockUser(blockerId, blockedId) {
   mutate((d) => {
     const before = d.blocks.length;
     d.blocks = d.blocks.filter((b) => !(b.blockerId === blockerId && b.blockedId === blockedId));
@@ -128,17 +121,17 @@ export function unblockUser(blockerId: string, blockedId: string): void {
   });
 }
 
-export function listBlocks(userId: string): Array<{ blockedUser: PublicUser; createdAt: string }> {
+export function listBlocks(userId) {
   const d = getDB();
   return d.blocks
     .filter((b) => b.blockerId === userId)
-    .map((b) => ({ blockedUser: toPublic(d, userById(d, b.blockedId)!), createdAt: b.createdAt }))
+    .map((b) => ({ blockedUser: toPublic(d, userById(d, b.blockedId)), createdAt: b.createdAt }))
     .filter((x) => !!x.blockedUser);
 }
 
 /* ---------------- reports ---------------- */
 
-const CATEGORY_RISK: Record<ReportCategory, Risk> = {
+const CATEGORY_RISK = {
   threats: "SEVERE",
   underage: "SEVERE",
   harassment: "HIGH",
@@ -150,10 +143,7 @@ const CATEGORY_RISK: Record<ReportCategory, Risk> = {
   other: "SUSPICIOUS",
 };
 
-export function reportUser(
-  reporterId: string,
-  input: { reportedId: string; conversationId?: string | null; category: ReportCategory; details?: string; alsoBlock?: boolean }
-): { reportId: string; risk: Risk } {
+export function reportUser(reporterId, input) {
   const d = getDB();
   const target = userById(d, input.reportedId);
   if (!target || target.status === "DELETED") throw NotFoundError("User not found");
@@ -170,7 +160,7 @@ export function reportUser(
     const conv = input.conversationId ? dd.conversations.find((c) => c.id === input.conversationId) : undefined;
     if (conv && !conv.participantIds.includes(reporterId)) throw new AppError(403, "FORBIDDEN", "Not a participant of this conversation");
 
-    const autoAction: ModActionKind = risk === "SEVERE" ? "SUSPEND" : "FLAG";
+    const autoAction = risk === "SEVERE" ? "SUSPEND" : "FLAG";
     const reportId = uid();
     dd.reports.push({
       id: reportId,
@@ -206,20 +196,20 @@ export function reportUser(
   });
 }
 
-export function conversationContext(conversationId: string): MessageRecord[] {
+export function conversationContext(conversationId) {
   const d = getDB();
   return d.messages.filter((m) => m.conversationId === conversationId).slice(-12);
 }
 
 /* ---------------- connections ---------------- */
 
-export function connectionBetween(d: DB, a: string, b: string) {
+export function connectionBetween(d, a, b) {
   return d.connections.find(
     (c) => (c.aId === a && c.bId === b) || (c.aId === b && c.bId === a)
   );
 }
 
-export function createConnection(requesterId: string, otherId: string): { connectionId: string; status: "pending" | "mutual"; already: boolean } {
+export function createConnection(requesterId, otherId) {
   if (requesterId === otherId) throw ValidationError("You cannot connect with yourself");
   const d = getDB();
   const other = userById(d, otherId);
@@ -231,23 +221,23 @@ export function createConnection(requesterId: string, otherId: string): { connec
   if (existing) return { connectionId: existing.id, status: existing.status, already: true };
 
   return mutate((dd) => {
-    const conn = { id: uid(), aId: requesterId, bId: otherId, status: "pending" as const, requestedBy: requesterId, createdAt: nowIso(), acceptedAt: null };
+    const conn = { id: uid(), aId: requesterId, bId: otherId, status: "pending", requestedBy: requesterId, createdAt: nowIso(), acceptedAt: null };
     dd.connections.push(conn);
     if (other.simulated) {
       // Community members in the embedded engine respond asynchronously.
       scheduleSimulatedAccept(conn.id);
     }
-    return { connectionId: conn.id, status: "pending" as const, already: false };
+    return { connectionId: conn.id, status: "pending", already: false };
   });
 }
 
-function scheduleSimulatedAccept(connectionId: string): void {
+function scheduleSimulatedAccept(connectionId) {
   setTimeout(() => {
     mutate((d) => {
       const conn = d.connections.find((c) => c.id === connectionId);
       if (!conn || conn.status !== "pending") return;
-      const a = userById(d, conn.aId)!;
-      const b = userById(d, conn.bId)!;
+      const a = userById(d, conn.aId);
+      const b = userById(d, conn.bId);
       const shared = a.interestIds.filter((i) => b.interestIds.includes(i)).length;
       const chance = shared >= 2 ? 0.88 : shared === 1 ? 0.65 : 0.35;
       if (Math.random() > chance) {
@@ -262,7 +252,7 @@ function scheduleSimulatedAccept(connectionId: string): void {
   }, 2400 + Math.random() * 3600);
 }
 
-export function removeConnection(userId: string, otherId: string): void {
+export function removeConnection(userId, otherId) {
   mutate((d) => {
     const before = d.connections.length;
     d.connections = d.connections.filter((c) => !((c.aId === userId && c.bId === otherId) || (c.aId === otherId && c.bId === userId)));
@@ -270,10 +260,7 @@ export function removeConnection(userId: string, otherId: string): void {
   });
 }
 
-export type { ConnectionView } from "../lib/types";
-import type { ConnectionView } from "../lib/types";
-
-export function listConnections(userId: string): ConnectionView[] {
+export function listConnections(userId) {
   const d = getDB();
   return d.connections
     .filter((c) => c.aId === userId || c.bId === userId)
@@ -282,7 +269,7 @@ export function listConnections(userId: string): ConnectionView[] {
       const otherId = c.aId === userId ? c.bId : c.aId;
       const other = userById(d, otherId);
       if (!other || other.status === "DELETED") return null;
-      const me = userById(d, userId)!;
+      const me = userById(d, userId);
       return {
         connectionId: c.id,
         other: toPublic(d, other),
@@ -293,36 +280,36 @@ export function listConnections(userId: string): ConnectionView[] {
         initiatedByMe: c.requestedBy === userId,
       };
     })
-    .filter((x): x is ConnectionView => x !== null);
+    .filter((x) => x !== null);
 }
 
 /* ---------------- notifications ---------------- */
 
-export function pushNotification(d: DB, userId: string, type: string, title: string, body: string): void {
+export function pushNotification(d, userId, type, title, body) {
   const n = { id: uid(), userId, type, title, body, read: false, createdAt: nowIso() };
   d.notifications.push(n);
   emitEvent("notification:new", n, { userId });
 }
 
-export function listNotifications(userId: string) {
+export function listNotifications(userId) {
   const d = getDB();
   return d.notifications.filter((n) => n.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 40);
 }
 
-export function markNotificationRead(userId: string, id: string): void {
+export function markNotificationRead(userId, id) {
   mutate((d) => {
     const n = d.notifications.find((x) => x.id === id && x.userId === userId);
     if (n) n.read = true;
   });
 }
 
-export function markAllNotificationsRead(userId: string): void {
+export function markAllNotificationsRead(userId) {
   mutate((d) => {
     for (const n of d.notifications) if (n.userId === userId) n.read = true;
   });
 }
 
-export function notifyAdmins(type: string, title: string, body: string): void {
+export function notifyAdmins(type, title, body) {
   const d = getDB();
   for (const admin of d.users.filter((u) => u.role === "admin")) {
     pushNotification(d, admin.id, type, title, body);
@@ -331,6 +318,6 @@ export function notifyAdmins(type: string, title: string, body: string): void {
   mutate(() => undefined);
 }
 
-export function unreadCount(userId: string): number {
+export function unreadCount(userId) {
   return getDB().notifications.filter((n) => n.userId === userId && !n.read).length;
 }

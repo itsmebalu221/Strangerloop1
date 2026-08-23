@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode, ButtonHTMLAttributes } from "react";
 import { cx, initials, hueBg } from "../lib/utils";
 import { IconX, IconWarn, IconRefresh } from "./icons";
 
 /* ---------------- Button ---------------- */
-
-type Variant = "primary" | "lime" | "ghost" | "danger" | "dark" | "outline" | "darkghost";
 
 export function Button({
   variant = "primary",
@@ -15,14 +12,14 @@ export function Button({
   children,
   disabled,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: "sm" | "md" | "lg" | "xl"; loading?: boolean }) {
+}) {
   const sizes = {
     sm: "px-3 py-1.5 text-[13px] gap-1.5",
     md: "px-4 py-2.5 text-[14.5px] gap-2",
     lg: "px-6 py-3 text-[15.5px] gap-2",
     xl: "px-8 py-4 text-[17px] gap-2.5",
   };
-  const variants: Record<Variant, string> = {
+  const variants = {
     primary: "bg-ink text-mist hover:bg-pine border border-ink",
     lime: "bg-lime text-ink border border-limedeep/60 shadow-[0_6px_20px_-6px_rgba(168,201,47,0.65)]",
     ghost: "bg-transparent text-ink border border-line hover:border-ink/50 hover:bg-paper",
@@ -48,7 +45,7 @@ export function Button({
   );
 }
 
-export function Spinner({ className }: { className?: string }) {
+export function Spinner({ className }) {
   return (
     <svg className={cx("animate-spin", className)} viewBox="0 0 24 24" fill="none">
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
@@ -59,7 +56,7 @@ export function Spinner({ className }: { className?: string }) {
 
 /* ---------------- Avatar ---------------- */
 
-export function Avatar({ name, hue, size = 40, ring = false, online = false }: { name: string; hue: number; size?: number; ring?: boolean; online?: boolean }) {
+export function Avatar({ name, hue, size = 40, ring = false, online = false }) {
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <div
@@ -77,7 +74,7 @@ export function Avatar({ name, hue, size = 40, ring = false, online = false }: {
 
 /* ---------------- Badge ---------------- */
 
-const BADGE_TONES: Record<string, string> = {
+const BADGE_TONES = {
   green: "bg-em/12 text-emdeep border-em/30",
   lime: "bg-lime/25 text-ink border-limedeep/50",
   red: "bg-coral/12 text-coral border-coral/30",
@@ -87,7 +84,7 @@ const BADGE_TONES: Record<string, string> = {
   teal: "bg-tealx/12 text-tealx border-tealx/30",
 };
 
-export function Badge({ tone = "gray", children, className }: { tone?: keyof typeof BADGE_TONES; children: ReactNode; className?: string }) {
+export function Badge({ tone = "gray", children, className }) {
   return (
     <span className={cx("mono-label inline-flex items-center gap-1 rounded-full border px-2 py-[3px] normal-case", BADGE_TONES[tone], className)}>
       {children}
@@ -97,10 +94,10 @@ export function Badge({ tone = "gray", children, className }: { tone?: keyof typ
 
 /* ---------------- Modal ---------------- */
 
-export function Modal({ open, onClose, title, children, width = "max-w-md", dark = false }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; width?: string; dark?: boolean }) {
+export function Modal({ open, onClose, title, children, width = "max-w-md", dark = false }) {
   useEffect(() => {
     if (!open) return;
-    const fn = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const fn = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
   }, [open, onClose]);
@@ -125,7 +122,7 @@ export function Modal({ open, onClose, title, children, width = "max-w-md", dark
 
 /* ---------------- Form field ---------------- */
 
-export function Field({ label, error, hint, children }: { label: string; error?: string | null; hint?: string; children: ReactNode }) {
+export function Field({ label, error, hint, children }) {
   return (
     <label className="block">
       <span className="mono-label mb-1.5 block text-moss">{label}</span>
@@ -142,7 +139,7 @@ export function Field({ label, error, hint, children }: { label: string; error?:
 
 /* ---------------- Toggle ---------------- */
 
-export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
+export function Toggle({ on, onChange, label }) {
   return (
     <button type="button" onClick={() => onChange(!on)} className="focus-ring flex items-center gap-3" aria-pressed={on}>
       <span className={cx("relative h-6 w-11 rounded-full border transition-colors", on ? "border-em bg-em" : "border-line bg-fog")}>
@@ -155,7 +152,7 @@ export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boo
 
 /* ---------------- Empty / Error states ---------------- */
 
-export function EmptyState({ icon, title, body, action }: { icon: ReactNode; title: string; body: string; action?: ReactNode }) {
+export function EmptyState({ icon, title, body, action }) {
   return (
     <div className="anim-fade-up flex flex-col items-center rounded-2xl border border-dashed border-line bg-paper/60 px-6 py-12 text-center">
       <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-fog text-moss">{icon}</div>
@@ -166,7 +163,7 @@ export function EmptyState({ icon, title, body, action }: { icon: ReactNode; tit
   );
 }
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+export function ErrorState({ message, onRetry }) {
   return (
     <div className="anim-fade-up flex flex-col items-center rounded-2xl border border-coral/30 bg-coral/5 px-6 py-10 text-center">
       <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-coral/15 text-coral">
@@ -183,7 +180,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
-export function LoadingBlock({ label = "Loading…" }: { label?: string }) {
+export function LoadingBlock({ label = "Loading…" }) {
   return (
     <div className="flex items-center justify-center gap-3 py-14 text-moss">
       <Spinner className="h-5 w-5 text-em" />
@@ -194,8 +191,8 @@ export function LoadingBlock({ label = "Loading…" }: { label?: string }) {
 
 /* ---------------- Scroll reveal ---------------- */
 
-export function Reveal({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
-  const ref = useRef<HTMLDivElement>(null);
+export function Reveal({ children, className, delay = 0 }) {
+  const ref = useRef(null);
   const [inView, setInView] = useState(false);
   useEffect(() => {
     const el = ref.current;
@@ -221,13 +218,13 @@ export function Reveal({ children, className, delay = 0 }: { children: ReactNode
 
 /* ---------------- Charts (dependency-free SVG) ---------------- */
 
-export function Sparkline({ values, className, stroke = "var(--color-em)", fill = true }: { values: number[]; className?: string; stroke?: string; fill?: boolean }) {
+export function Sparkline({ values, className, stroke = "var(--color-em)", fill = true }) {
   const w = 160;
   const h = 44;
   if (!values.length) return null;
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
-  const pts = values.map((v, i) => [ (i / (values.length - 1)) * w, h - 4 - ((v - min) / (max - min || 1)) * (h - 8) ]);
+  const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - 4 - ((v - min) / (max - min || 1)) * (h - 8)]);
   const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className={className} preserveAspectRatio="none">
@@ -238,7 +235,7 @@ export function Sparkline({ values, className, stroke = "var(--color-em)", fill 
   );
 }
 
-export function Bars({ values, labels, color = "var(--color-em)" }: { values: number[]; labels: string[]; color?: string }) {
+export function Bars({ values, labels, color = "var(--color-em)" }) {
   const max = Math.max(...values, 1);
   return (
     <div className="flex h-32 items-end gap-2">
@@ -256,7 +253,7 @@ export function Bars({ values, labels, color = "var(--color-em)" }: { values: nu
 
 /* ---------------- misc ---------------- */
 
-export function LiveDot({ className }: { className?: string }) {
+export function LiveDot({ className }) {
   return (
     <span className={cx("relative inline-flex h-2.5 w-2.5", className)}>
       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-em opacity-60" />
@@ -265,6 +262,6 @@ export function LiveDot({ className }: { className?: string }) {
   );
 }
 
-export function Kbd({ children }: { children: ReactNode }) {
+export function Kbd({ children }) {
   return <kbd className="mono-label rounded-md border border-line bg-mist px-1.5 py-0.5 text-[10px]">{children}</kbd>;
 }

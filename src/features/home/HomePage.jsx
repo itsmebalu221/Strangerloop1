@@ -1,7 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import type { PublicUser, RecentConversation, ConnectionView } from "../../lib/types";
 import { useAuth } from "../../state/auth";
 import { useToast } from "../../state/toast";
 import { AppShell, usePresence } from "../../components/shell";
@@ -9,7 +8,7 @@ import { Avatar, Badge, Button, EmptyState, ErrorState, LoadingBlock, LiveDot } 
 import { IconRadar, IconGear, IconUsers, IconChat, IconCheck, IconWarn, IconChevronRight, IconShield } from "../../components/icons";
 import { timeAgo } from "../../lib/utils";
 
-const STATE_TONE: Record<string, "green" | "gray" | "red" | "amber"> = {
+const STATE_TONE = {
   ACTIVE: "green",
   ENDED: "gray",
   BLOCKED: "red",
@@ -20,20 +19,19 @@ export default function HomePage() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const { push } = useToast();
-  const qc = useQueryClient();
   const presence = usePresence();
 
   const recents = useQuery({
     queryKey: ["conversations"],
-    queryFn: () => api.get<{ items: RecentConversation[] }>("/conversations?limit=5"),
+    queryFn: () => api.get("/conversations?limit=5"),
   });
   const connections = useQuery({
     queryKey: ["connections"],
-    queryFn: () => api.get<{ items: ConnectionView[] }>("/connections"),
+    queryFn: () => api.get("/connections"),
   });
 
   const verify = useMutation({
-    mutationFn: () => api.post<{ user: never }>("/auth/verify-email"),
+    mutationFn: () => api.post("/auth/verify-email"),
     onSuccess: () => {
       refreshUser();
       push("success", "Email verified", "Your account is fully active.");
@@ -156,7 +154,7 @@ export default function HomePage() {
             <div className="mono-label mb-3 flex items-center gap-2 text-[9.5px] text-sage">
               <LiveDot /> online right now
             </div>
-            {(presence.data?.online ?? []).slice(0, 7).map((p: PublicUser) => (
+            {(presence.data?.online ?? []).slice(0, 7).map((p) => (
               <div key={p.id} className="flex items-center gap-3 border-b border-line/60 py-2.5 last:border-0">
                 <Avatar name={p.username} hue={p.avatarHue} size={34} online />
                 <div className="min-w-0">

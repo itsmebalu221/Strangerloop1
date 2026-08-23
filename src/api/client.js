@@ -7,7 +7,7 @@
 
 import { uid, sleep, rand } from "../lib/utils";
 import { AppError, ApiError } from "../lib/errors";
-import { getDB, initEngine, userById } from "../server/db";
+import { getDB, initEngine, userById, presenceSnapshot } from "../server/db";
 import { setParticipantResolver } from "./realtime";
 import * as auth from "../server/auth.service";
 import * as profile from "../server/profile.service";
@@ -15,7 +15,6 @@ import * as matching from "../server/matching.service";
 import * as chat from "../server/chat.service";
 import * as safety from "../server/safety.service";
 import * as admin from "../server/admin.service";
-import { presenceSnapshot } from "../server/db";
 
 /* ---------------- engine bootstrap ---------------- */
 initEngine();
@@ -27,7 +26,7 @@ setParticipantResolver((userId, conversationId) => {
 /* ---------------- token storage ---------------- */
 const TOKEN_KEY = "wavelength.tokens.v1";
 
-export function getTokens(): { accessToken: string; refreshToken: string } | null {
+export function getTokens() {
   try {
     const raw = localStorage.getItem(TOKEN_KEY);
     return raw ? JSON.parse(raw) : null;
@@ -35,63 +34,42 @@ export function getTokens(): { accessToken: string; refreshToken: string } | nul
     return null;
   }
 }
-export function setTokens(t: { accessToken: string; refreshToken: string }): void {
+export function setTokens(t) {
   localStorage.setItem(TOKEN_KEY, JSON.stringify(t));
 }
-export function clearTokens(): void {
+export function clearTokens() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-const expiredListeners = new Set<() => void>();
-export function onSessionExpired(fn: () => void): () => void {
+const expiredListeners = new Set();
+export function onSessionExpired(fn) {
   expiredListeners.add(fn);
   return () => expiredListeners.delete(fn);
 }
-function fireExpired(): void {
+function fireExpired() {
   clearTokens();
   expiredListeners.forEach((fn) => fn());
 }
 
 /* ---------------- routing table ---------------- */
 
-interface Ctx {
-  userId: string;
-  body: Record<string, unknown>;
-  params: Record<string, string>;
-  query: URLSearchParams;
-}
-type Handler = (ctx: Ctx) => unknown;
-interface Route {
-  method: string;
-  segments: string[];
-  handler: Handler;
-  public?: boolean;
-  rate?: [number, number]; // [maxHits, windowMs]
-  key: string;
-}
-
-function route(method: string, path: string, handler: Handler, opts: { public?: boolean; rate?: [number, number] } = {}): Route {
+function route(method, path, handler, opts = {}) {
   return { method, segments: path.split("/").filter(Boolean), handler, public: opts.public, rate: opts.rate, key: `${method} ${path}` };
 }
 
-const routes: Route[] = [
-  // ---- health (liveness + dependency readiness) ----
-  route("GET", "/health", () => ({ status: "ok", uptime: Math.round((Date.now() - bootedAt) / 1000) }), { public: true }),
+const bootedAt = Date.now();
+
+const routes = [
+  // ---- infra ----
+  route("GET", "/health", () => ({ status: "ok", uptimeSec: Math.floor((Date.now() - bootedAt) / 1000) }), { public: true }),
   route("GET", "/ready", () => {
-    const dbOk = (() => {
-      try {
-        return getDB().v > 0;
-      } catch {
-        return false;
-      }
-    })();
-    if (!dbOk) throw new AppError(503, "NOT_READY", "Storage dependency unavailable");
-    return { status: "ready", dependencies: { database: "up" } };
+    const d = getDB();
+    return { ready: Array.isArray(d.users), users: d.users.length };
   }, { public: true }),
 
   // ---- auth ----
   route("POST", "/auth/register", (c) => {
-    const r = auth.register(c.body as never);
+    const r = auth.register(c.body);
     setTokens(r.tokens);
     return { user: r.user };
   }, { public: true, rate: [5, 120_000] }),
@@ -134,10 +112,10 @@ const routes: Route[] = [
   // ---- reference + profile ----
   route("GET", "/reference", () => profile.referenceData(), { public: true }),
   route("GET", "/profile", (c) => ({ profile: profile.getProfile(c.userId) })),
-  route("PATCH", "/profile", (c) => ({ profile: profile.updateProfile(c.userId, c.body as never) })),
+  route("PATCH", "/profile", (c) => ({ profile: profile.updateProfile(c.userId, c.body) })),
   route("GET", "/profile/:username", (c) => ({ profile: profile.publicProfileByUsername(c.params.username) })),
   route("GET", "/preferences", (c) => ({ preferences: profile.getPreferences(c.userId) })),
-  route("PATCH", "/preferences", (c) => ({ preferences: profile.updatePreferences(c.userId, c.body as never) })),
+  route("PATCH", "/preferences", (c) => ({ preferences: profile.updatePreferences(c.userId, c.body) })),
   route("DELETE", "/account", (c) => {
     profile.deleteAccount(c.userId);
     clearTokens();
@@ -166,7 +144,7 @@ const routes: Route[] = [
     safety.unblockUser(c.userId, c.params.userId);
     return { ok: true };
   }),
-  route("POST", "/reports", (c) => safety.reportUser(c.userId, c.body as never), { rate: [6, 300_000] }),
+  route("POST", "/reports", (c) => safety.reportUser(c.userId, c.body), { rate: [6, 300_000] }),
   route("GET", "/connections", (c) => ({ items: safety.listConnections(c.userId) })),
   route("DELETE", "/connections/:userId", (c) => {
     safety.removeConnection(c.userId, c.params.userId);
@@ -189,22 +167,22 @@ const routes: Route[] = [
   route("GET", "/admin/users", (c) => ({ items: admin.listUsers(c.userId, c.query.get("q") ?? "", c.query.get("status")) })),
   route("GET", "/admin/users/:id", (c) => admin.userDetail(c.userId, c.params.id)),
   route("POST", "/admin/users/:id/action", (c) => {
-    admin.adminUserAction(c.userId, c.params.id, c.body.action as never, (c.body.note as string) ?? null);
+    admin.adminUserAction(c.userId, c.params.id, c.body.action, c.body.note ?? null);
     return { ok: true };
   }),
   route("GET", "/admin/reports", (c) => ({ items: admin.listReports(c.userId, c.query.get("status")) })),
   route("POST", "/admin/reports/:id/action", (c) => {
-    admin.reportAction(c.userId, c.params.id, c.body.action as never, (c.body.note as string) ?? null);
+    admin.reportAction(c.userId, c.params.id, c.body.action, c.body.note ?? null);
     return { ok: true };
   }),
   route("GET", "/admin/audit", (c) => ({ items: admin.auditLog(c.userId) })),
 ];
 
-function matchRoute(method: string, pathname: string): { route: Route; params: Record<string, string> } | null {
+function matchRoute(method, pathname) {
   const segs = pathname.split("/").filter(Boolean);
   for (const r of routes) {
     if (r.method !== method || r.segments.length !== segs.length) continue;
-    const params: Record<string, string> = {};
+    const params = {};
     let ok = true;
     for (let i = 0; i < segs.length; i++) {
       const want = r.segments[i];
@@ -220,8 +198,8 @@ function matchRoute(method: string, pathname: string): { route: Route; params: R
 }
 
 /* ---------------- rate limiting (token windows per endpoint) ---------------- */
-const rateBuckets = new Map<string, number[]>();
-function checkRate(r: Route): void {
+const rateBuckets = new Map();
+function checkRate(r) {
   if (!r.rate) return;
   const [max, windowMs] = r.rate;
   const now = Date.now();
@@ -235,7 +213,7 @@ function checkRate(r: Route): void {
 }
 
 /* ---------------- auth resolution with auto-refresh ---------------- */
-function resolveClaims(): { userId: string } | null {
+function resolveClaims() {
   const tokens = getTokens();
   if (!tokens) return null;
   let claims = auth.verifyAccess(tokens.accessToken);
@@ -256,9 +234,7 @@ function resolveClaims(): { userId: string } | null {
 
 /* ---------------- the client ---------------- */
 
-const bootedAt = Date.now();
-
-export async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+export async function request(method, url, body) {
   const requestId = uid();
   const [rawPath, qs] = url.split("?");
   // All endpoints live under the /api/v1 base (callers may pass relative paths).
@@ -283,8 +259,8 @@ export async function request<T>(method: string, url: string, body?: unknown): P
   }
 
   try {
-    const data = r.handler({ userId, body: (body ?? {}) as Record<string, unknown>, params, query: new URLSearchParams(qs ?? "") });
-    return data as T;
+    const data = r.handler({ userId, body: body ?? {}, params, query: new URLSearchParams(qs ?? "") });
+    return data;
   } catch (e) {
     if (e instanceof AppError) throw new ApiError(e.status, e.code, e.message, requestId);
     if (e instanceof ApiError) throw e;
@@ -295,10 +271,10 @@ export async function request<T>(method: string, url: string, body?: unknown): P
 }
 
 export const api = {
-  get: <T>(url: string) => request<T>("GET", url),
-  post: <T>(url: string, body?: unknown) => request<T>("POST", url, body),
-  patch: <T>(url: string, body?: unknown) => request<T>("PATCH", url, body),
-  del: <T>(url: string, body?: unknown) => request<T>("DELETE", url, body),
+  get: (url) => request("GET", url),
+  post: (url, body) => request("POST", url, body),
+  patch: (url, body) => request("PATCH", url, body),
+  del: (url, body) => request("DELETE", url, body),
 };
 
 /* Re-export for the auth store handshake. */

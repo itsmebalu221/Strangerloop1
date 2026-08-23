@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import type { ConnectionView, RecentConversation } from "../../lib/types";
 import { useAuth } from "../../state/auth";
 import { AppShell } from "../../components/shell";
 import { Avatar, Badge, Button, Reveal } from "../../components/ui";
@@ -9,8 +8,8 @@ import { IconGear, IconEye, IconShield, IconSpark, IconGlobe, IconChat } from ".
 
 export default function ProfilePage() {
   const { user } = useAuth();
-  const connections = useQuery({ queryKey: ["connections"], queryFn: () => api.get<{ items: ConnectionView[] }>("/connections") });
-  const recents = useQuery({ queryKey: ["conversations"], queryFn: () => api.get<{ items: RecentConversation[] }>("/conversations?limit=50") });
+  const connections = useQuery({ queryKey: ["connections"], queryFn: () => api.get("/connections") });
+  const recents = useQuery({ queryKey: ["conversations"], queryFn: () => api.get("/conversations?limit=50") });
 
   if (!user) return null;
 

@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import type { Gender, PublicUser, ReferenceData, SessionRecord } from "../../lib/types";
 import { ApiError } from "../../lib/errors";
 import { useAuth } from "../../state/auth";
 import { useToast } from "../../state/toast";
@@ -54,10 +53,10 @@ export default function SettingsPage() {
 }
 
 function useReference() {
-  return useQuery({ queryKey: ["reference"], queryFn: () => api.get<ReferenceData>("/reference") });
+  return useQuery({ queryKey: ["reference"], queryFn: () => api.get("/reference") });
 }
 
-function ChipSelect({ all, selected, onToggle, max = 12 }: { all: { id: string; name: string }[]; selected: string[]; onToggle: (id: string) => void; max?: number }) {
+function ChipSelect({ all, selected, onToggle, max = 12 }) {
   return (
     <div className="flex flex-wrap gap-2">
       {all.map((x) => (
@@ -78,12 +77,12 @@ function ProfileTab() {
   const ref = useReference();
   const [username, setUsername] = useState(user?.username ?? "");
   const [bio, setBio] = useState(user?.bio ?? "");
-  const [gender, setGender] = useState<Gender>(user?.gender ?? "undisclosed");
+  const [gender, setGender] = useState(user?.gender ?? "undisclosed");
   const [country, setCountry] = useState(user?.country ?? "");
   const [hue, setHue] = useState(user?.avatarHue ?? 150);
-  const [interests, setInterests] = useState<string[]>(user?.interests.map((i) => i.id) ?? []);
-  const [langs, setLangs] = useState<string[]>(user?.languages.map((l) => l.id) ?? []);
-  const [cts, setCts] = useState<string[]>(user?.convTypes.map((c) => c.id) ?? []);
+  const [interests, setInterests] = useState(user?.interests.map((i) => i.id) ?? []);
+  const [langs, setLangs] = useState(user?.languages.map((l) => l.id) ?? []);
+  const [cts, setCts] = useState(user?.convTypes.map((c) => c.id) ?? []);
 
   const save = useMutation({
     mutationFn: () => api.patch("/profile", { username, bio, gender, country, avatarHue: hue, interestIds: interests, languageIds: langs, convTypeIds: cts }),
@@ -94,17 +93,18 @@ function ProfileTab() {
     onError: (e) => push("error", "Couldn't save", e instanceof ApiError ? e.message : "Try again"),
   });
 
-  if (!user) return null;
   const byCategory = useMemo(() => {
-    const map = new Map<string, ReferenceData["interests"]>();
+    const map = new Map();
     for (const i of ref.data?.interests ?? []) {
       if (!map.has(i.category)) map.set(i.category, []);
-      map.get(i.category)!.push(i);
+      map.get(i.category).push(i);
     }
     return [...map.entries()];
   }, [ref.data]);
 
-  const toggle = (arr: string[], set: (v: string[]) => void, id: string, min = 1) => {
+  if (!user) return null;
+
+  const toggle = (arr, set, id, min = 1) => {
     if (arr.includes(id)) {
       if (arr.length > min) set(arr.filter((x) => x !== id));
     } else set([...arr, id]);
@@ -128,7 +128,7 @@ function ProfileTab() {
           <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} />
         </Field>
         <Field label="Gender">
-          <select className="input" value={gender} onChange={(e) => setGender(e.target.value as Gender)}>
+          <select className="input" value={gender} onChange={(e) => setGender(e.target.value)}>
             <option value="male">Male</option>
             <option value="female">Female</option>
             <option value="nonbinary">Non-binary / Other</option>
@@ -176,11 +176,11 @@ function MatchingTab() {
   const { user, refreshUser } = useAuth();
   const { push } = useToast();
   const ref = useReference();
-  const [genders, setGenders] = useState<string[]>(user?.prefs.genders ?? ["anyone"]);
+  const [genders, setGenders] = useState(user?.prefs.genders ?? ["anyone"]);
   const [ageMin, setAgeMin] = useState(user?.prefs.ageMin ?? 18);
   const [ageMax, setAgeMax] = useState(user?.prefs.ageMax ?? 34);
-  const [langs, setLangs] = useState<string[]>(user?.prefs.languageIds ?? []);
-  const [cts, setCts] = useState<string[]>(user?.prefs.convTypeIds ?? []);
+  const [langs, setLangs] = useState(user?.prefs.languageIds ?? []);
+  const [cts, setCts] = useState(user?.prefs.convTypeIds ?? []);
 
   const save = useMutation({
     mutationFn: () => api.patch("/preferences", { genders, ageMin, ageMax, languageIds: langs, convTypeIds: cts }),
@@ -192,7 +192,7 @@ function MatchingTab() {
   });
 
   if (!user) return null;
-  const toggle = (arr: string[], set: (v: string[]) => void, id: string) => set(arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]);
+  const toggle = (arr, set, id) => set(arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]);
 
   return (
     <div className="anim-fade-up space-y-5">
@@ -278,18 +278,18 @@ function PrivacyTab() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [typed, setTyped] = useState("");
 
-  const blocks = useQuery({ queryKey: ["blocks"], queryFn: () => api.get<{ items: { blockedUser: PublicUser; createdAt: string }[] }>("/blocks") });
-  const sessions = useQuery({ queryKey: ["sessions"], queryFn: () => api.get<{ sessions: SessionRecord[] }>("/auth/sessions") });
+  const blocks = useQuery({ queryKey: ["blocks"], queryFn: () => api.get("/blocks") });
+  const sessions = useQuery({ queryKey: ["sessions"], queryFn: () => api.get("/auth/sessions") });
 
   const unblock = useMutation({
-    mutationFn: (id: string) => api.del(`/blocks/${id}`),
+    mutationFn: (id) => api.del(`/blocks/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["blocks"] });
       push("info", "Unblocked", "They can match you again.");
     },
   });
   const revoke = useMutation({
-    mutationFn: (id: string) => api.post(`/auth/sessions/${id}/revoke`),
+    mutationFn: (id) => api.post(`/auth/sessions/${id}/revoke`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sessions"] });
       push("info", "Session revoked");
@@ -388,7 +388,7 @@ const NOTIF_KEYS = [
 ];
 
 function NotificationsTab() {
-  const [prefs, setPrefs] = useState<Record<string, boolean>>(() => {
+  const [prefs, setPrefs] = useState(() => {
     try {
       const raw = localStorage.getItem("wavelength.notifPrefs");
       return raw ? JSON.parse(raw) : { connect_notify: true, connect_activity: true, safety_alerts: true, product_updates: false };
@@ -396,7 +396,7 @@ function NotificationsTab() {
       return { connect_notify: true, connect_activity: true, safety_alerts: true, product_updates: false };
     }
   });
-  const set = (k: string, v: boolean) => {
+  const set = (k, v) => {
     const next = { ...prefs, [k]: v };
     setPrefs(next);
     localStorage.setItem("wavelength.notifPrefs", JSON.stringify(next));
@@ -454,7 +454,7 @@ function SafetyTab() {
             ["SEVERE", "red", "Blocked before delivery + auto-escalated to moderators"],
           ].map(([lvl, tone, desc]) => (
             <div key={lvl} className="flex items-center gap-3 rounded-xl border border-line bg-mist/60 px-4 py-3">
-              <Badge tone={tone as "green" | "amber" | "red"}>{lvl}</Badge>
+              <Badge tone={tone}>{lvl}</Badge>
               <span className="text-[12.5px] font-semibold text-moss">{desc}</span>
             </div>
           ))}

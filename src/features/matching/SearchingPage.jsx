@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 import { onEvent } from "../../api/realtime";
-import type { MatchFoundPayload, PublicUser, QueueStatusPayload } from "../../lib/types";
 import { useAuth } from "../../state/auth";
 import { useToast } from "../../state/toast";
 import { AppShell, usePresence } from "../../components/shell";
@@ -11,7 +10,7 @@ import { IconRadar, IconX, IconSpark, Logo } from "../../components/icons";
 import { ApiError } from "../../lib/errors";
 import { fmtDuration } from "../../lib/utils";
 
-const LEVEL_COPY: Record<number, string> = {
+const LEVEL_COPY = {
   1: "Matching shared interests & conversation style…",
   2: "Relaxing the age window a little…",
   3: "Broadening interests — staying on-language…",
@@ -22,12 +21,11 @@ const LEVEL_COPY: Record<number, string> = {
 export default function SearchingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { push } = useToast();
   const presence = usePresence();
   const [level, setLevel] = useState(1);
   const [elapsed, setElapsed] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [matched, setMatched] = useState<MatchFoundPayload | null>(null);
+  const [error, setError] = useState(null);
+  const [matched, setMatched] = useState(null);
   const startedRef = useRef(Date.now());
 
   // Start (or resume) the search exactly once.
@@ -35,7 +33,7 @@ export default function SearchingPage() {
     let cancelled = false;
     (async () => {
       try {
-        const st = await api.get<{ status: string; level: number; elapsedMs: number }>("/matching/status");
+        const st = await api.get("/matching/status");
         if (st.status !== "searching") {
           await api.post("/matching/search");
           startedRef.current = Date.now();
@@ -55,11 +53,10 @@ export default function SearchingPage() {
   // Live queue events.
   useEffect(() => {
     const offStatus = onEvent("queue:status", (p) => {
-      const payload = p as QueueStatusPayload;
-      if (payload.status === "searching" && payload.level) setLevel(payload.level);
+      if (p.status === "searching" && p.level) setLevel(p.level);
     });
     const offMatch = onEvent("match:found", (p) => {
-      setMatched(p as MatchFoundPayload);
+      setMatched(p);
     });
     return () => {
       offStatus();
@@ -121,14 +118,12 @@ export default function SearchingPage() {
             <div
               key={interest.id}
               className="anim-floaty absolute"
-              style={
-                {
-                  top: `${[4, 70, 18, 82][i]}%`,
-                  left: `${[68, 84, -6, 8][i]}%`,
-                  "--rot": `${[-8, 6, 4, -5][i]}deg`,
-                  animationDelay: `${i * 0.9}s`,
-                } as React.CSSProperties
-              }
+              style={{
+                top: `${[4, 70, 18, 82][i]}%`,
+                left: `${[68, 84, -6, 8][i]}%`,
+                "--rot": `${[-8, 6, 4, -5][i]}deg`,
+                animationDelay: `${i * 0.9}s`,
+              }}
             >
               <span className="chip !cursor-default whitespace-nowrap !bg-ink !text-lime !border-pine shadow-pop">
                 <IconSpark width={11} height={11} /> {interest.name}
@@ -159,7 +154,7 @@ export default function SearchingPage() {
   );
 }
 
-function MatchInterstitial({ other, sharedNames }: { other: PublicUser; sharedNames: string[] }) {
+function MatchInterstitial({ other, sharedNames }) {
   return (
     <div className="ambient noise relative flex min-h-screen items-center justify-center px-4">
       <div className="card anim-pop w-full max-w-sm p-8 text-center">

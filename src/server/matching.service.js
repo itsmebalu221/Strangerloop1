@@ -3,7 +3,6 @@
    relaxation, blocked/banned/self exclusion, and a single active queue
    entry per user (idempotent join, concurrency-safe within the engine). */
 
-import type { DB, UserRecord, ConversationRecord, PublicUser, Interest } from "../lib/types";
 import { uid, nowIso } from "../lib/utils";
 import { getDB, mutate, userById, toPublic, isBlockedEitherWay, activeConversationFor, trackDay } from "./db";
 import { AppError, ConflictError } from "../lib/errors";
@@ -11,27 +10,20 @@ import { emitEvent } from "../api/realtime";
 import { starterFor } from "./strangers";
 import { requireUser } from "./auth.service";
 
-export const MATCH_WEIGHTS = {
+export const MATCH_WEIGHTS = Object.freeze({
   sharedInterest: 20, // per shared interest, capped at 2 → 40
   language: 20,
   ageCompatibility: 15,
   genderPreference: 20, // 10 per direction
   conversationType: 15,
   country: 10,
-} as const;
+});
 
 export const MAX_SCORE = 120;
 
-const overlaps = (a: string[], b: string[]) => a.filter((x) => b.includes(x));
+const overlaps = (a, b) => a.filter((x) => b.includes(x));
 
-export interface ScoreResult {
-  score: number;
-  sharedInterestIds: string[];
-  sharedLanguage: boolean;
-  sharedConvTypes: string[];
-}
-
-export function scorePair(d: DB, seeker: UserRecord, cand: UserRecord): ScoreResult {
+export function scorePair(d, seeker, cand) {
   const sharedInterestIds = overlaps(seeker.interestIds, cand.interestIds);
   const sharedLangs = overlaps(seeker.languageIds, cand.languageIds);
   const sharedConvTypes = overlaps(seeker.convTypeIds, cand.convTypeIds);
@@ -54,7 +46,7 @@ export function scorePair(d: DB, seeker: UserRecord, cand: UserRecord): ScoreRes
   return { score, sharedInterestIds, sharedLanguage: sharedLangs.length > 0, sharedConvTypes };
 }
 
-function ageOf(u: UserRecord): number {
+function ageOf(u) {
   const d = new Date(u.dob);
   const now = new Date();
   let a = now.getFullYear() - d.getFullYear();
@@ -62,23 +54,23 @@ function ageOf(u: UserRecord): number {
   return a;
 }
 
-function prefIncludes(prefs: string[], gender: string): boolean {
+function prefIncludes(prefs, gender) {
   return prefs.includes("anyone") || prefs.includes(gender) || prefs.includes("undisclosed");
 }
 
 /* ---------------- eligibility per fallback level ---------------- */
 
-function genderPrefHardOk(a: UserRecord, b: UserRecord): boolean {
+function genderPrefHardOk(a, b) {
   return prefIncludes(a.prefs.genders, b.gender) && prefIncludes(b.prefs.genders, a.gender);
 }
 
-function ageHardOk(a: UserRecord, b: UserRecord, slack = 0): boolean {
+function ageHardOk(a, b, slack = 0) {
   const aa = ageOf(a);
   const ab = ageOf(b);
   return ab >= a.prefs.ageMin - slack && ab <= a.prefs.ageMax + slack && aa >= b.prefs.ageMin - slack && aa <= b.prefs.ageMax + slack;
 }
 
-export function eligibleCandidates(d: DB, seeker: UserRecord, level: number): UserRecord[] {
+export function eligibleCandidates(d, seeker, level) {
   const seekerActive = d.queue.some((q) => q.userId === seeker.id && q.status === "WAITING");
   return d.users.filter((cand) => {
     if (cand.id === seeker.id) return false;
@@ -113,11 +105,11 @@ export function eligibleCandidates(d: DB, seeker: UserRecord, level: number): Us
   });
 }
 
-const LEVEL_MIN_SCORE: Record<number, number> = { 1: 40, 2: 40, 3: 35, 4: 22, 5: 12 };
+const LEVEL_MIN_SCORE = { 1: 40, 2: 40, 3: 35, 4: 22, 5: 12 };
 
-export function findBest(d: DB, seeker: UserRecord, level: number): { cand: UserRecord; result: ScoreResult } | null {
+export function findBest(d, seeker, level) {
   const cands = eligibleCandidates(d, seeker, level);
-  let best: { cand: UserRecord; result: ScoreResult } | null = null;
+  let best = null;
   for (const cand of cands) {
     const result = scorePair(d, seeker, cand);
     if (!best || result.score > best.result.score) best = { cand, result };
@@ -128,17 +120,17 @@ export function findBest(d: DB, seeker: UserRecord, level: number): { cand: User
 
 /* ---------------- queue + match creation ---------------- */
 
-const loops = new Map<string, ReturnType<typeof setInterval>>();
-let matchCreatedHook: ((conv: ConversationRecord) => void) | null = null;
-export function onMatchCreated(fn: (conv: ConversationRecord) => void): void {
+const loops = new Map();
+let matchCreatedHook = null;
+export function onMatchCreated(fn) {
   matchCreatedHook = fn;
 }
 
-function levelForElapsed(ms: number): number {
+function levelForElapsed(ms) {
   return Math.min(5, 1 + Math.floor(ms / 2400));
 }
 
-export function createMatch(d: DB, seeker: UserRecord, cand: UserRecord, result: ScoreResult, level: number): ConversationRecord {
+export function createMatch(d, seeker, cand, result, level) {
   d.matches.push({ id: uid(), seekerId: seeker.id, candidateId: cand.id, score: result.score, level, createdAt: nowIso() });
 
   const seekerEntry = d.queue.find((q) => q.userId === seeker.id && q.status === "WAITING");
@@ -153,8 +145,8 @@ export function createMatch(d: DB, seeker: UserRecord, cand: UserRecord, result:
     candEntry.resolvedAt = nowIso();
   }
 
-  const shared = result.sharedInterestIds.map((id) => d.interests.find((i) => i.id === id)!).filter(Boolean);
-  const conv: ConversationRecord = {
+  const shared = result.sharedInterestIds.map((id) => d.interests.find((i) => i.id === id)).filter(Boolean);
+  const conv = {
     id: uid(),
     participantIds: [seeker.id, cand.id],
     state: "ACTIVE",
@@ -171,14 +163,14 @@ export function createMatch(d: DB, seeker: UserRecord, cand: UserRecord, result:
   return conv;
 }
 
-function announceMatch(d: DB, conv: ConversationRecord, seeker: UserRecord, cand: UserRecord, shared: Interest[]): void {
+function announceMatch(d, conv, seeker, cand, shared) {
   const seekerView = { conversation: conv, other: toPublic(d, cand), shared };
   const candView = { conversation: conv, other: toPublic(d, seeker), shared };
   emitEvent("match:found", seekerView, { userId: seeker.id });
   if (!cand.simulated) emitEvent("match:found", candView, { userId: cand.id });
 }
 
-export function search(userId: string): { entryId: string; status: "searching" } {
+export function search(userId) {
   const d = getDB();
   const user = requireUser(d, userId);
   if (activeConversationFor(d, userId)) throw ConflictError("Finish or end your current conversation first");
@@ -187,7 +179,7 @@ export function search(userId: string): { entryId: string; status: "searching" }
   if (existing) return { entryId: existing.id, status: "searching" }; // idempotent double-click guard
 
   const entry = mutate((dd) => {
-    const e = { id: uid(), userId, status: "WAITING" as const, level: 1, joinedAt: nowIso(), resolvedAt: null };
+    const e = { id: uid(), userId, status: "WAITING", level: 1, joinedAt: nowIso(), resolvedAt: null };
     dd.queue.push(e);
     trackDay("searches");
     return e;
@@ -198,7 +190,7 @@ export function search(userId: string): { entryId: string; status: "searching" }
   return { entryId: entry.id, status: "searching" };
 }
 
-function startLoop(userId: string): void {
+function startLoop(userId) {
   if (loops.has(userId)) return;
   const started = Date.now();
   const loop = setInterval(() => attempt(userId, Date.now() - started), 1150);
@@ -206,13 +198,13 @@ function startLoop(userId: string): void {
   setTimeout(() => attempt(userId, 60), 350); // immediate first pass
 }
 
-function stopLoop(userId: string): void {
+function stopLoop(userId) {
   const l = loops.get(userId);
   if (l) clearInterval(l);
   loops.delete(userId);
 }
 
-function attempt(userId: string, elapsed: number): void {
+function attempt(userId, elapsed) {
   const d = getDB();
   const entry = d.queue.find((q) => q.userId === userId && q.status === "WAITING");
   if (!entry) {
@@ -236,20 +228,20 @@ function attempt(userId: string, elapsed: number): void {
   if (!best) return;
 
   const conv = mutate((dd) => {
-    const s = userById(dd, userId)!;
-    const c = userById(dd, best.cand.id)!;
+    const s = userById(dd, userId);
+    const c = userById(dd, best.cand.id);
     const res = scorePair(dd, s, c);
     return createMatch(dd, s, c, res, level);
   });
   stopLoop(userId);
   if (best.cand.simulated) stopLoop(best.cand.id);
 
-  const shared = conv.sharedInterestIds.map((id) => d.interests.find((i) => i.id === id)!).filter(Boolean);
+  const shared = conv.sharedInterestIds.map((id) => d.interests.find((i) => i.id === id)).filter(Boolean);
   announceMatch(getDB(), conv, seeker, best.cand, shared);
   matchCreatedHook?.(conv);
 }
 
-export function cancel(userId: string): { status: "cancelled" } {
+export function cancel(userId) {
   stopLoop(userId);
   mutate((d) => {
     const e = d.queue.find((q) => q.userId === userId && q.status === "WAITING");
@@ -262,7 +254,7 @@ export function cancel(userId: string): { status: "cancelled" } {
   return { status: "cancelled" };
 }
 
-export function queueStatus(userId: string): { status: "idle" | "searching" | "matched"; level: number; elapsedMs: number } {
+export function queueStatus(userId) {
   const d = getDB();
   const e = [...d.queue].reverse().find((q) => q.userId === userId);
   if (!e) return { status: "idle", level: 1, elapsedMs: 0 };
@@ -275,7 +267,7 @@ export function queueStatus(userId: string): { status: "idle" | "searching" | "m
   return { status: "idle", level: 1, elapsedMs: 0 };
 }
 
-export function ensureSearching(userId: string): void {
+export function ensureSearching(userId) {
   const st = queueStatus(userId);
   if (st.status === "searching" && !loops.has(userId)) {
     startLoop(userId);
@@ -283,7 +275,7 @@ export function ensureSearching(userId: string): void {
 }
 
 /* Synchronous best-effort match used by NEXT — keeps the experience near-instant. */
-export function matchNow(userId: string): ConversationRecord | null {
+export function matchNow(userId) {
   const d = getDB();
   const seeker = requireUser(d, userId);
   if (activeConversationFor(d, userId)) throw ConflictError("You already have an active conversation");
@@ -291,12 +283,12 @@ export function matchNow(userId: string): ConversationRecord | null {
     const best = findBest(d, seeker, level);
     if (best) {
       const conv = mutate((dd) => {
-        const s = userById(dd, userId)!;
-        const c = userById(dd, best.cand.id)!;
+        const s = userById(dd, userId);
+        const c = userById(dd, best.cand.id);
         const res = scorePair(dd, s, c);
         return createMatch(dd, s, c, res, level);
       });
-      const shared = conv.sharedInterestIds.map((id) => getDB().interests.find((i) => i.id === id)!).filter(Boolean);
+      const shared = conv.sharedInterestIds.map((id) => getDB().interests.find((i) => i.id === id)).filter(Boolean);
       announceMatch(getDB(), conv, seeker, best.cand, shared);
       matchCreatedHook?.(conv);
       return conv;
@@ -305,7 +297,7 @@ export function matchNow(userId: string): ConversationRecord | null {
   return null;
 }
 
-export function publicUserById(id: string): PublicUser {
+export function publicUserById(id) {
   const d = getDB();
   const u = userById(d, id);
   if (!u) throw new AppError(404, "NOT_FOUND", "User not found");

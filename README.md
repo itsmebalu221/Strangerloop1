@@ -2,6 +2,10 @@
 
 A complete V1 of an interest-based random stranger chat platform: real matching engine, real-time chat, safety & moderation, RBAC admin console — running on an **embedded server engine** inside this static build.
 
+## Language
+
+The entire codebase is **JavaScript / JSX only** — no TypeScript anywhere (no `.ts`/`.tsx`, no `tsconfig.json`, no type annotations). Frontend: React + JSX. Embedded server engine: plain JS modules following the same `routes → middleware → controllers → services → repositories → DB` layering the Express deployment uses.
+
 ## ⚠️ What is real here, and what is not
 
 This workspace ships a static `dist/index.html` — there is **no Node process, MySQL server, or mail provider available in this environment**. Per the project's own engineering rules, nothing is faked silently:
@@ -22,15 +26,15 @@ This workspace ships a static `dist/index.html` — there is **no Node process, 
 ## Architecture map → Express deployment
 
 ```
-src/api/client.ts        →  Express routes + controllers (same paths /api/v1/*, same envelopes)
-src/api/realtime.ts      →  socket.io-client / Socket.IO server layer
+src/api/client.js        →  Express routes + controllers (same paths /api/v1/*, same envelopes)
+src/api/realtime.js      →  socket.io-client / Socket.IO server layer
 src/server/auth.service  →  AuthService (JWT from env, Argon2id, nodemailer for reset/verify)
 src/server/matching.*    →  MatchingService + MatchingScoreService + QueueService (SELECT … FOR UPDATE)
 src/server/chat.service  →  ChatService + socket handlers (membership checks per event)
 src/server/safety.*      →  SafetyService + ModerationService
 src/server/admin.service →  AdminService + RBAC permission tables + audit_logs
 src/server/profile.*     →  ProfileService (retention-policy deletion)
-src/server/db.ts         →  Prisma repositories + migrations; localStorage adapter → MySQL
+src/server/db.js         →  Prisma repositories + migrations; localStorage adapter → MySQL
 ```
 
 Every screen talks only to `api.*` / `socketSend` — the swap is contained to those two modules.

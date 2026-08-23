@@ -1,5 +1,4 @@
 import { Component, useEffect } from "react";
-import type { ReactNode } from "react";
 import { HashRouter, Routes, Route, Navigate, useLocation, Link } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./state/auth";
@@ -42,21 +41,6 @@ function Splash() {
   );
 }
 
-function ProtectedRoute({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
-  const { status, user } = useAuth();
-  if (status === "booting" || status === "authenticating" || status === "refreshing") return <Splash />;
-  if (status !== "authenticated" || !user) return <Navigate to="/login" replace />;
-  if (admin && user.role !== "admin") return <ForbiddenPage />;
-  return <>{children}</>;
-}
-
-function PublicRoute({ children }: { children: ReactNode }) {
-  const { status } = useAuth();
-  if (status === "booting") return <Splash />;
-  if (status === "authenticated") return <Navigate to="/home" replace />;
-  return <>{children}</>;
-}
-
 function ForbiddenPage() {
   return (
     <div className="ambient flex min-h-screen items-center justify-center px-4">
@@ -68,6 +52,21 @@ function ForbiddenPage() {
       </div>
     </div>
   );
+}
+
+function ProtectedRoute({ children, admin = false }) {
+  const { status, user } = useAuth();
+  if (status === "booting" || status === "authenticating" || status === "refreshing") return <Splash />;
+  if (status !== "authenticated" || !user) return <Navigate to="/login" replace />;
+  if (admin && user.role !== "admin") return <ForbiddenPage />;
+  return children;
+}
+
+function PublicRoute({ children }) {
+  const { status } = useAuth();
+  if (status === "booting") return <Splash />;
+  if (status === "authenticated") return <Navigate to="/home" replace />;
+  return children;
 }
 
 function NotFoundPage() {
@@ -83,9 +82,12 @@ function NotFoundPage() {
   );
 }
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
-  static getDerivedStateFromError(error: Error) {
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
     return { error };
   }
   render() {

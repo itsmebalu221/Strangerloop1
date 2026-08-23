@@ -1,21 +1,19 @@
 /* AdminService + ModerationService (human tooling) + AnalyticsService.
    RBAC: permission maps per role; every action is audit-logged. */
 
-import type { DB, PublicUser, ReportRecord, UserStatus } from "../lib/types";
 import { uid, nowIso } from "../lib/utils";
-import { getDB, mutate, userById, toPublic } from "./db";
+import { getDB, mutate, userById, toPublic, presenceSnapshot } from "./db";
 import { AuthorizationError, NotFoundError, ValidationError } from "../lib/errors";
 import { emitEvent } from "../api/realtime";
-import { presenceSnapshot } from "./db";
 import { pushNotification } from "./safety.service";
 
-const ROLE_PERMISSIONS: Record<string, string[]> = {
+const ROLE_PERMISSIONS = {
   admin: ["users:read", "users:action", "reports:read", "reports:action", "analytics:read", "audit:read"],
   moderator: ["users:read", "reports:read", "reports:action", "audit:read"],
   user: [],
 };
 
-export function requirePermission(userId: string, permission: string): void {
+export function requirePermission(userId, permission) {
   const d = getDB();
   const u = userById(d, userId);
   if (!u) throw AuthorizationError("Unknown account");
@@ -23,7 +21,7 @@ export function requirePermission(userId: string, permission: string): void {
   if (!perms.includes(permission)) throw AuthorizationError(`Missing permission: ${permission}`);
 }
 
-function audit(d: DB, actorId: string, action: string, target: string | null, details: string | null): void {
+function audit(d, actorId, action, target, details) {
   d.audit.push({
     id: uid(),
     actorId,
@@ -37,7 +35,7 @@ function audit(d: DB, actorId: string, action: string, target: string | null, de
 
 /* ---------------- overview / analytics ---------------- */
 
-export function overview(actorId: string) {
+export function overview(actorId) {
   requirePermission(actorId, "analytics:read");
   const d = getDB();
   const now = Date.now();
@@ -45,7 +43,7 @@ export function overview(actorId: string) {
   const searches = days.reduce((s, r) => s + r.searches, 0);
   const matches = days.reduce((s, r) => s + r.matches, 0);
   const ended = d.conversations.filter((c) => c.endedAt);
-  const avgMs = ended.length ? ended.reduce((s, c) => s + (new Date(c.endedAt!).getTime() - new Date(c.startedAt).getTime()), 0) / ended.length : 0;
+  const avgMs = ended.length ? ended.reduce((s, c) => s + (new Date(c.endedAt).getTime() - new Date(c.startedAt).getTime()), 0) / ended.length : 0;
 
   return {
     online: presenceSnapshot().count,
@@ -62,14 +60,14 @@ export function overview(actorId: string) {
   };
 }
 
-export function analytics(actorId: string) {
+export function analytics(actorId) {
   requirePermission(actorId, "analytics:read");
   const d = getDB();
   const days = d.analyticsDays.slice(-14);
   const realUsers = d.users.filter((u) => !u.simulated);
   const now = Date.now();
   const retentionBase = Math.max(1, realUsers.filter((u) => now - new Date(u.createdAt).getTime() > 86400000).length);
-  const active = (windowMs: number) => realUsers.filter((u) => now - new Date(u.lastActiveAt).getTime() < windowMs).length;
+  const active = (windowMs) => realUsers.filter((u) => now - new Date(u.lastActiveAt).getTime() < windowMs).length;
 
   return {
     days,
@@ -100,18 +98,7 @@ export function analytics(actorId: string) {
 
 /* ---------------- user management ---------------- */
 
-export interface AdminUserRow {
-  user: PublicUser;
-  email: string;
-  status: UserStatus;
-  role: string;
-  warnCount: number;
-  createdAt: string;
-  lastActiveAt: string;
-  simulated: boolean;
-}
-
-export function listUsers(actorId: string, q: string, status: string | null): AdminUserRow[] {
+export function listUsers(actorId, q, status) {
   requirePermission(actorId, "users:read");
   const d = getDB();
   const needle = q.trim().toLowerCase();
@@ -132,7 +119,7 @@ export function listUsers(actorId: string, q: string, status: string | null): Ad
     }));
 }
 
-export function userDetail(actorId: string, targetId: string) {
+export function userDetail(actorId, targetId) {
   requirePermission(actorId, "users:read");
   const d = getDB();
   const u = userById(d, targetId);
@@ -147,7 +134,7 @@ export function userDetail(actorId: string, targetId: string) {
       createdAt: u.createdAt,
       lastActiveAt: u.lastActiveAt,
       simulated: !!u.simulated,
-    } as AdminUserRow,
+    },
     moderationHistory: d.moderation.filter((m) => m.userId === targetId).slice(-20).reverse(),
     reportsAgainst: d.reports.filter((r) => r.reportedId === targetId).slice(-10).reverse(),
     reportsFiled: d.reports.filter((r) => r.reporterId === targetId).length,
@@ -156,7 +143,7 @@ export function userDetail(actorId: string, targetId: string) {
   };
 }
 
-export function adminUserAction(actorId: string, targetId: string, action: "warn" | "suspend" | "ban" | "restore", note: string | null): void {
+export function adminUserAction(actorId, targetId, action, note) {
   requirePermission(actorId, "users:action");
   mutate((d) => {
     const target = userById(d, targetId);
@@ -190,7 +177,7 @@ export function adminUserAction(actorId: string, targetId: string, action: "warn
   emitEvent("account:action", { targetId, action }, { userId: targetId });
 }
 
-function endActiveConversationsFor(d: DB, userId: string): void {
+function endActiveConversationsFor(d, userId) {
   for (const c of d.conversations) {
     if (c.state === "ACTIVE" && c.participantIds.includes(userId)) {
       c.state = "ENDED";
@@ -203,14 +190,7 @@ function endActiveConversationsFor(d: DB, userId: string): void {
 
 /* ---------------- report queue ---------------- */
 
-export interface AdminReportRow extends ReportRecord {
-  reporterName: string;
-  reportedName: string;
-  context: Array<{ sender: string; content: string; at: string }>;
-  priorViolations: number;
-}
-
-export function listReports(actorId: string, status: string | null): AdminReportRow[] {
+export function listReports(actorId, status) {
   requirePermission(actorId, "reports:read");
   const d = getDB();
   return d.reports
@@ -220,7 +200,7 @@ export function listReports(actorId: string, status: string | null): AdminReport
     .map((r) => toReportRow(d, r));
 }
 
-function toReportRow(d: DB, r: ReportRecord): AdminReportRow {
+function toReportRow(d, r) {
   const ctx = r.conversationId ? d.messages.filter((m) => m.conversationId === r.conversationId).slice(-8) : [];
   return {
     ...r,
@@ -231,7 +211,7 @@ function toReportRow(d: DB, r: ReportRecord): AdminReportRow {
   };
 }
 
-export function reportAction(actorId: string, reportId: string, action: "dismiss" | "warn" | "suspend" | "ban" | "escalate", note: string | null): void {
+export function reportAction(actorId, reportId, action, note) {
   requirePermission(actorId, "reports:action");
   if (action === "ban") requirePermission(actorId, "users:action");
   mutate((d) => {
@@ -278,7 +258,7 @@ export function reportAction(actorId: string, reportId: string, action: "dismiss
   });
 }
 
-export function auditLog(actorId: string) {
+export function auditLog(actorId) {
   requirePermission(actorId, "audit:read");
   const d = getDB();
   return [...d.audit].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100);

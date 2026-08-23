@@ -2,15 +2,14 @@
    Storage adapter: localStorage (swap for MySQL via Prisma in the Express deployment).
    All writes go through mutate(); reads through getDB(). */
 
-import type { DB, Interest, Language, ConvType, PublicUser, UserRecord, ConversationRecord } from "../lib/types";
-import { uid, nowIso, stretchHash, dayKey } from "../lib/utils";
+import { uid, nowIso, stretchHash, dayKey, ageFromDob, ageRangeOf } from "../lib/utils";
 import { PERSONAS, dobFromAge } from "./strangers";
 import { emitEvent } from "../api/realtime";
 
 const DB_KEY = "wavelength.db.v1";
 const DB_VERSION = 1;
 
-const INTERESTS: Array<[string, string]> = [
+const INTERESTS = [
   ["Programming", "Technology"], ["Artificial Intelligence", "Technology"], ["Web Development", "Technology"],
   ["Mobile Development", "Technology"], ["Cybersecurity", "Technology"], ["Startups", "Technology"],
   ["Technology", "Technology"], ["Robotics", "Technology"],
@@ -22,7 +21,7 @@ const INTERESTS: Array<[string, string]> = [
   ["Friendship", "Social"], ["Casual Conversation", "Social"], ["Networking", "Social"], ["Debate", "Social"], ["Relationships", "Social"],
 ];
 
-const LANGUAGES: Array<[string, string]> = [
+const LANGUAGES = [
   ["en", "English"], ["hi", "Hindi"], ["te", "Telugu"], ["ta", "Tamil"], ["kn", "Kannada"],
   ["ml", "Malayalam"], ["bn", "Bengali"], ["mr", "Marathi"], ["es", "Spanish"], ["ja", "Japanese"],
   ["de", "German"], ["pt", "Portuguese"], ["tr", "Turkish"], ["fr", "French"],
@@ -32,7 +31,7 @@ const CONV_TYPES = ["Casual", "Friendship", "Networking", "Coding", "Gaming", "S
 
 const COUNTRIES = ["India", "United States", "United Kingdom", "Germany", "Japan", "Brazil", "Singapore", "Canada", "Spain", "Turkey", "Nigeria", "UAE", "Australia", "France"];
 
-function makeUser(partial: Partial<UserRecord> & { id: string; username: string }): UserRecord {
+function makeUser(partial) {
   return {
     email: `${partial.username.toLowerCase()}@wavelength.dev`,
     usernameLower: partial.username.toLowerCase(),
@@ -56,17 +55,17 @@ function makeUser(partial: Partial<UserRecord> & { id: string; username: string 
     warnCount: 0,
     lastActiveAt: nowIso(),
     ...partial,
-  } as UserRecord;
+  };
 }
 
-function buildSeed(): DB {
-  const interests: Interest[] = INTERESTS.map(([name, category]) => ({ id: `int_${name.toLowerCase().replace(/\s+/g, "-")}`, name, category }));
-  const languages: Language[] = LANGUAGES.map(([code, name]) => ({ id: `lang_${code}`, code, name }));
-  const conversationTypes: ConvType[] = CONV_TYPES.map((name) => ({ id: `ct_${name.toLowerCase()}`, name }));
+function buildSeed() {
+  const interests = INTERESTS.map(([name, category]) => ({ id: `int_${name.toLowerCase().replace(/\s+/g, "-")}`, name, category }));
+  const languages = LANGUAGES.map(([code, name]) => ({ id: `lang_${code}`, code, name }));
+  const conversationTypes = CONV_TYPES.map((name) => ({ id: `ct_${name.toLowerCase()}`, name }));
 
-  const byName = (arr: { name: string; id: string }[], names: string[]) => names.map((n) => arr.find((x) => x.name === n)!.id);
+  const byName = (arr, names) => names.map((n) => arr.find((x) => x.name === n).id);
 
-  const users: UserRecord[] = PERSONAS.map((p) =>
+  const users = PERSONAS.map((p) =>
     makeUser({
       id: uid(),
       username: p.username,
@@ -164,13 +163,13 @@ function buildSeed(): DB {
 
 /* ---------------- persistence ---------------- */
 
-let db: DB = load();
+let db = load();
 
-function load(): DB {
+function load() {
   try {
     const raw = localStorage.getItem(DB_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as DB;
+      const parsed = JSON.parse(raw);
       if (parsed && parsed.v === DB_VERSION) return parsed;
     }
   } catch {
@@ -183,43 +182,47 @@ function load(): DB {
   return fresh;
 }
 
-function save(): void {
+function save() {
   try {
     localStorage.setItem(DB_KEY, JSON.stringify(db));
   } catch { /* storage full/private mode — engine continues in-memory */ }
 }
 
-export function getDB(): DB {
+export function getDB() {
   return db;
 }
 
-export function mutate<T>(fn: (d: DB) => T): T {
+export function mutate(fn) {
   const result = fn(db);
   save();
   return result;
 }
 
-export function resetDB(): void {
+export function resetDB() {
   db = buildSeed();
   save();
 }
 
 /* ---------------- query helpers (repository) ---------------- */
 
-export function userById(d: DB, id: string): UserRecord | undefined {
+export function userById(d, id) {
   return d.users.find((u) => u.id === id);
 }
 
-export function userByLower(d: DB, lower: string): UserRecord | undefined {
+export function userByLower(d, lower) {
   return d.users.find((u) => u.usernameLower === lower);
 }
 
-export function userByEmail(d: DB, email: string): UserRecord | undefined {
+export function userByEmail(d, email) {
   const e = email.trim().toLowerCase();
   return d.users.find((u) => u.email === e);
 }
 
-export function toPublic(d: DB, u: UserRecord): PublicUser {
+function ageRangeOfDob(dob) {
+  return ageRangeOf(ageFromDob(dob));
+}
+
+export function toPublic(d, u) {
   return {
     id: u.id,
     username: u.username,
@@ -228,31 +231,26 @@ export function toPublic(d: DB, u: UserRecord): PublicUser {
     country: u.country,
     bio: u.bio,
     avatarHue: u.avatarHue,
-    interests: u.interestIds.map((id) => d.interests.find((i) => i.id === id)!).filter(Boolean),
-    languages: u.languageIds.map((id) => d.languages.find((l) => l.id === id)!).filter(Boolean),
-    convTypes: u.convTypeIds.map((id) => d.conversationTypes.find((c) => c.id === id)!).filter(Boolean),
+    interests: u.interestIds.map((id) => d.interests.find((i) => i.id === id)).filter(Boolean),
+    languages: u.languageIds.map((id) => d.languages.find((l) => l.id === id)).filter(Boolean),
+    convTypes: u.convTypeIds.map((id) => d.conversationTypes.find((c) => c.id === id)).filter(Boolean),
     simulated: u.simulated,
   };
 }
 
-import { ageFromDob, ageRangeOf } from "../lib/utils";
-function ageRangeOfDob(dob: string): string {
-  return ageRangeOf(ageFromDob(dob));
-}
-
-export function isBlockedEitherWay(d: DB, a: string, b: string): boolean {
+export function isBlockedEitherWay(d, a, b) {
   return d.blocks.some((bl) => (bl.blockerId === a && bl.blockedId === b) || (bl.blockerId === b && bl.blockedId === a));
 }
 
-export function activeConversationFor(d: DB, userId: string): ConversationRecord | undefined {
+export function activeConversationFor(d, userId) {
   return d.conversations.find((c) => c.state === "ACTIVE" && c.participantIds.includes(userId));
 }
 
-export function activeConversationBetween(d: DB, a: string, b: string): ConversationRecord | undefined {
+export function activeConversationBetween(d, a, b) {
   return d.conversations.find((c) => c.state === "ACTIVE" && c.participantIds.includes(a) && c.participantIds.includes(b));
 }
 
-export function trackDay(field: "signups" | "searches" | "matches" | "conversations" | "reports"): void {
+export function trackDay(field) {
   mutate((d) => {
     const key = dayKey(0);
     let row = d.analyticsDays.find((r) => r.date === key);
@@ -269,7 +267,7 @@ export function trackDay(field: "signups" | "searches" | "matches" | "conversati
 
 let booted = false;
 
-export function initEngine(): void {
+export function initEngine() {
   if (booted) return;
   booted = true;
 
@@ -312,11 +310,11 @@ export function initEngine(): void {
   }, 15_000);
 }
 
-export function presenceSnapshot(): { count: number; online: PublicUser[] } {
+export function presenceSnapshot() {
   const d = getDB();
   const online = d.onlinePersonaIds
     .map((id) => userById(d, id))
-    .filter((u): u is UserRecord => !!u && u.status === "ACTIVE")
+    .filter((u) => !!u && u.status === "ACTIVE")
     .map((u) => toPublic(d, u));
   return { count: online.length + d.users.filter((u) => !u.simulated && u.status === "ACTIVE").length, online };
 }

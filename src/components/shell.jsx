@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
@@ -7,15 +6,14 @@ import { onEvent } from "../api/realtime";
 import { useAuth } from "../state/auth";
 import { useToast } from "../state/toast";
 import { cx, timeAgo } from "../lib/utils";
-import type { NotificationRecord } from "../lib/types";
-import { Avatar, Badge, LiveDot } from "./ui";
+import { Avatar, LiveDot } from "./ui";
 import { Logo, IconBell, IconGear, IconLogout, IconGavel, IconChevronDown } from "./icons";
 
-function useOutside(onOut: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
+function useOutside(onOut) {
+  const ref = useRef(null);
   useEffect(() => {
-    const fn = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onOut();
+    const fn = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onOut();
     };
     document.addEventListener("mousedown", fn);
     return () => document.removeEventListener("mousedown", fn);
@@ -28,7 +26,7 @@ export function usePresence() {
   useEffect(() => onEvent("presence:update", () => qc.invalidateQueries({ queryKey: ["presence"] })), [qc]);
   return useQuery({
     queryKey: ["presence"],
-    queryFn: () => api.get<{ count: number; online: import("../lib/types").PublicUser[] }>("/presence"),
+    queryFn: () => api.get("/presence"),
     refetchInterval: 25_000,
     staleTime: 10_000,
   });
@@ -40,7 +38,7 @@ function NotificationsBell() {
   const ref = useOutside(() => setOpen(false));
   const { data } = useQuery({
     queryKey: ["notifications"],
-    queryFn: () => api.get<{ items: NotificationRecord[] }>("/notifications"),
+    queryFn: () => api.get("/notifications"),
     refetchInterval: 30_000,
   });
   useEffect(() => onEvent("notification:new", () => qc.invalidateQueries({ queryKey: ["notifications"] })), [qc]);
@@ -50,7 +48,7 @@ function NotificationsBell() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
   });
   const markOne = useMutation({
-    mutationFn: (id: string) => api.post(`/notifications/${id}/read`),
+    mutationFn: (id) => api.post(`/notifications/${id}/read`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
   });
 
@@ -99,6 +97,15 @@ function NotificationsBell() {
   );
 }
 
+function MenuItem({ onClick, icon, label, danger }) {
+  return (
+    <button onClick={onClick} className={cx("flex w-full items-center gap-3 px-4 py-2.5 text-[13.5px] font-semibold transition hover:bg-mist", danger ? "text-coral" : "text-ink")}>
+      <span className={danger ? "text-coral" : "text-moss"}>{icon}</span>
+      {label}
+    </button>
+  );
+}
+
 function UserMenu() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
@@ -107,7 +114,7 @@ function UserMenu() {
   const ref = useOutside(() => setOpen(false));
   if (!user) return null;
 
-  const doLogout = async (all: boolean) => {
+  const doLogout = async (all) => {
     setOpen(false);
     if (all) await logoutAll();
     else await logout();
@@ -138,22 +145,13 @@ function UserMenu() {
   );
 }
 
-function MenuItem({ onClick, icon, label, danger }: { onClick: () => void; icon: ReactNode; label: string; danger?: boolean }) {
-  return (
-    <button onClick={onClick} className={cx("flex w-full items-center gap-3 px-4 py-2.5 text-[13.5px] font-semibold transition hover:bg-mist", danger ? "text-coral" : "text-ink")}>
-      <span className={danger ? "text-coral" : "text-moss"}>{icon}</span>
-      {label}
-    </button>
-  );
-}
-
-const navLink = ({ isActive }: { isActive: boolean }) =>
+const navLink = ({ isActive }) =>
   cx(
     "focus-ring rounded-full px-4 py-2 text-[13.5px] font-bold transition",
     isActive ? "bg-ink text-lime" : "text-moss hover:bg-fog hover:text-ink"
   );
 
-export function AppShell({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
+export function AppShell({ children, wide = false }) {
   const presence = usePresence();
   return (
     <div className="ambient noise relative min-h-screen">
@@ -208,5 +206,3 @@ export function AppShell({ children, wide = false }: { children: ReactNode; wide
     </div>
   );
 }
-
-

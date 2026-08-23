@@ -3,7 +3,6 @@
    Signing secrets are module constants in the embedded engine; the Express
    deployment sources them from environment variables (JWT_ACCESS_SECRET etc.). */
 
-import type { DB, Role, SelfUser, SessionRecord, UserRecord, Gender } from "../lib/types";
 import { uid, nowIso, stretchHash, hashStr, b64u, ageFromDob } from "../lib/utils";
 import { getDB, mutate, userByEmail, userByLower, userById, toPublic, trackDay } from "./db";
 import { AppError, ValidationError, AuthenticationError, NotFoundError, ConflictError } from "../lib/errors";
@@ -14,10 +13,8 @@ export const ACCESS_TTL_MS = 15 * 60 * 1000;
 const REFRESH_TTL_MS = 30 * 86400000;
 const RESET_TTL_MS = 30 * 60 * 1000;
 
-export interface AccessClaims { sub: string; sessionId: string; role: Role; iat: number; exp: number }
-
-export function signAccess(user: UserRecord, sessionId: string): string {
-  const claims: AccessClaims = {
+export function signAccess(user, sessionId) {
+  const claims = {
     sub: user.id,
     sessionId,
     role: user.role,
@@ -28,12 +25,12 @@ export function signAccess(user: UserRecord, sessionId: string): string {
   return `${body}.${hashStr(body + "::" + ACCESS_SECRET)}`;
 }
 
-export function verifyAccess(token: string): AccessClaims | null {
+export function verifyAccess(token) {
   const [body, sig] = token.split(".");
   if (!body || !sig) return null;
   if (hashStr(body + "::" + ACCESS_SECRET) !== sig) return null;
   try {
-    const claims = JSON.parse(b64u.dec(body)) as AccessClaims;
+    const claims = JSON.parse(b64u.dec(body));
     if (claims.exp < Date.now()) return null;
     return claims;
   } catch {
@@ -41,21 +38,19 @@ export function verifyAccess(token: string): AccessClaims | null {
   }
 }
 
-function hashRefresh(value: string): string {
+function hashRefresh(value) {
   return hashStr(value + "::" + REFRESH_SECRET);
 }
 
-function deviceLabel(): string {
+function deviceLabel() {
   const ua = navigator.userAgent;
   const mobile = /Mobi|Android|iPhone/i.test(ua);
   const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Browser";
   return `${mobile ? "Mobile" : "Desktop"} · ${browser}`;
 }
 
-interface TokenPair { accessToken: string; refreshToken: string }
-
-function issueTokens(d: DB, user: UserRecord, familyId?: string): TokenPair {
-  const session: SessionRecord = {
+function issueTokens(d, user, familyId) {
+  const session = {
     id: uid(),
     userId: user.id,
     device: deviceLabel(),
@@ -81,7 +76,7 @@ function issueTokens(d: DB, user: UserRecord, familyId?: string): TokenPair {
   return { accessToken: signAccess(user, session.id), refreshToken: value };
 }
 
-function assertAccountUsable(u: UserRecord): void {
+function assertAccountUsable(u) {
   if (u.status === "DELETED") throw AuthenticationError("This account no longer exists");
   if (u.status === "BANNED") throw new AppError(403, "ACCOUNT_BANNED", "This account has been banned");
   if (u.status === "SUSPENDED" && u.suspendedUntil && new Date(u.suspendedUntil) > new Date()) {
@@ -89,7 +84,7 @@ function assertAccountUsable(u: UserRecord): void {
   }
 }
 
-export function toSelf(d: DB, u: UserRecord): SelfUser {
+export function toSelf(d, u) {
   const status =
     u.status === "SUSPENDED" && u.suspendedUntil && new Date(u.suspendedUntil) > new Date() ? "SUSPENDED" : u.status;
   return { ...toPublic(d, u), email: u.email, emailVerified: u.emailVerified, role: u.role, status, prefs: u.prefs, warnCount: u.warnCount, createdAt: u.createdAt };
@@ -98,25 +93,12 @@ export function toSelf(d: DB, u: UserRecord): SelfUser {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
-export function validatePassword(pw: string): void {
+export function validatePassword(pw) {
   if (pw.length < 8) throw ValidationError("Password must be at least 8 characters", "password");
   if (!/[a-zA-Z]/.test(pw) || !/\d/.test(pw)) throw ValidationError("Password needs at least one letter and one number", "password");
 }
 
-export interface RegisterInput {
-  email: string;
-  password: string;
-  username: string;
-  dob: string;
-  gender: Gender;
-  country: string;
-  languageIds: string[];
-  interestIds: string[];
-  convTypeIds: string[];
-  bio?: string;
-}
-
-export function register(input: RegisterInput): { user: SelfUser; tokens: TokenPair } {
+export function register(input) {
   const email = input.email.trim().toLowerCase();
   if (!EMAIL_RE.test(email)) throw ValidationError("Enter a valid email address", "email");
   if (!USERNAME_RE.test(input.username)) throw ValidationError("Username must be 3–20 letters, numbers or underscores", "username");
@@ -133,7 +115,7 @@ export function register(input: RegisterInput): { user: SelfUser; tokens: TokenP
   return mutate((d) => {
     if (userByEmail(d, email)) throw ConflictError("An account with this email already exists");
     if (userByLower(d, input.username.toLowerCase())) throw ConflictError("That username is taken — try another");
-    const user: UserRecord = {
+    const user = {
       id: uid(),
       email,
       username: input.username,
@@ -175,7 +157,7 @@ export function register(input: RegisterInput): { user: SelfUser; tokens: TokenP
   });
 }
 
-export function login(email: string, password: string): { user: SelfUser; tokens: TokenPair } {
+export function login(email, password) {
   return mutate((d) => {
     const user = userByEmail(d, email);
     if (!user || stretchHash(password, user.salt) !== user.passHash) {
@@ -188,7 +170,7 @@ export function login(email: string, password: string): { user: SelfUser; tokens
   });
 }
 
-export function refresh(refreshToken: string): { tokens: TokenPair; user: SelfUser } {
+export function refresh(refreshToken) {
   return mutate((d) => {
     const rtId = refreshToken.split(".")[0];
     const rt = d.refreshTokens.find((r) => r.id === rtId);
@@ -223,7 +205,7 @@ export function refresh(refreshToken: string): { tokens: TokenPair; user: SelfUs
   });
 }
 
-export function logout(refreshToken: string): void {
+export function logout(refreshToken) {
   mutate((d) => {
     const rtId = refreshToken.split(".")[0];
     const rt = d.refreshTokens.find((r) => r.id === rtId);
@@ -235,7 +217,7 @@ export function logout(refreshToken: string): void {
   });
 }
 
-export function logoutAll(userId: string): void {
+export function logoutAll(userId) {
   mutate((d) => {
     for (const s of d.sessions) if (s.userId === userId && !s.revokedAt) s.revokedAt = nowIso();
     for (const r of d.refreshTokens) if (r.userId === userId && !r.revokedAt) r.revokedAt = nowIso();
@@ -243,7 +225,7 @@ export function logoutAll(userId: string): void {
   });
 }
 
-export function me(userId: string): SelfUser {
+export function me(userId) {
   const d = getDB();
   const user = userById(d, userId);
   if (!user) throw AuthenticationError("Account not found");
@@ -251,12 +233,12 @@ export function me(userId: string): SelfUser {
   return toSelf(d, user);
 }
 
-export function sessionsFor(userId: string): SessionRecord[] {
+export function sessionsFor(userId) {
   const d = getDB();
   return d.sessions.filter((s) => s.userId === userId && !s.revokedAt && new Date(s.expiresAt) > new Date());
 }
 
-export function revokeSession(userId: string, sessionId: string): void {
+export function revokeSession(userId, sessionId) {
   mutate((d) => {
     const s = d.sessions.find((x) => x.id === sessionId && x.userId === userId);
     if (!s) throw NotFoundError("Session not found");
@@ -265,7 +247,7 @@ export function revokeSession(userId: string, sessionId: string): void {
   });
 }
 
-export function markEmailVerified(userId: string): SelfUser {
+export function markEmailVerified(userId) {
   return mutate((d) => {
     const u = userById(d, userId);
     if (!u) throw NotFoundError();
@@ -274,7 +256,7 @@ export function markEmailVerified(userId: string): SelfUser {
   });
 }
 
-export function forgotPassword(email: string): { note: string; devToken: string | null } {
+export function forgotPassword(email) {
   const d = getDB();
   const user = userByEmail(d, email);
   const note = "If an account exists for that email, a reset link has been sent.";
@@ -288,7 +270,7 @@ export function forgotPassword(email: string): { note: string; devToken: string 
   return { note, devToken: raw };
 }
 
-export function resetPassword(token: string, newPassword: string): void {
+export function resetPassword(token, newPassword) {
   validatePassword(newPassword);
   mutate((d) => {
     const entry = d.passwordResetTokens.find((t) => t.tokenHash === hashStr(token));
@@ -306,7 +288,7 @@ export function resetPassword(token: string, newPassword: string): void {
   });
 }
 
-export function requireUser(d: DB, userId: string): UserRecord {
+export function requireUser(d, userId) {
   const u = userById(d, userId);
   if (!u || u.status === "DELETED") throw AuthenticationError("Account not found");
   assertAccountUsable(u);

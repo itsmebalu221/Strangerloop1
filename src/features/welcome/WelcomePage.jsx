@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import type { PublicUser, ReferenceData } from "../../lib/types";
 import { Avatar, Badge, Button, LiveDot, Reveal } from "../../components/ui";
 import { Logo, IconRadar, IconShield, IconSpark, IconNext, IconLink, IconBlock, IconChat, IconGlobe } from "../../components/icons";
 import { cx } from "../../lib/utils";
@@ -19,7 +18,7 @@ const SAMPLE = {
   country: "India",
 };
 
-function scoreOf(p: PublicUser): { score: number; shared: string[] } {
+function scoreOf(p) {
   const shared = p.interests.map((i) => i.name).filter((n) => SAMPLE.interests.includes(n));
   const sharedLang = p.languages.some((l) => SAMPLE.langs.includes(l.name));
   const sharedCt = p.convTypes.some((c) => SAMPLE.cts.includes(c.name));
@@ -29,23 +28,14 @@ function scoreOf(p: PublicUser): { score: number; shared: string[] } {
   return { score, shared };
 }
 
-interface ConsoleRow {
-  id: number;
-  name: string;
-  hue: number;
-  tags: string[];
-  score: number;
-  shared: string[];
-}
-
 function MatchConsole() {
   const { data } = useQuery({
     queryKey: ["presence"],
-    queryFn: () => api.get<{ count: number; online: PublicUser[] }>("/presence"),
+    queryFn: () => api.get("/presence"),
     refetchInterval: 20_000,
   });
-  const [rows, setRows] = useState<ConsoleRow[]>([]);
-  const [phase, setPhase] = useState<"scan" | "scored">("scan");
+  const [rows, setRows] = useState([]);
+  const [phase, setPhase] = useState("scan");
   const [idx, setIdx] = useState(0);
 
   const online = useMemo(() => data?.online ?? [], [data]);
@@ -151,8 +141,8 @@ const WEIGHTS = [
 ];
 
 export default function WelcomePage() {
-  const presence = useQuery({ queryKey: ["presence"], queryFn: () => api.get<{ count: number; online: PublicUser[] }>("/presence"), refetchInterval: 20_000 });
-  const reference = useQuery({ queryKey: ["reference"], queryFn: () => api.get<ReferenceData>("/reference") });
+  const presence = useQuery({ queryKey: ["presence"], queryFn: () => api.get("/presence"), refetchInterval: 20_000 });
+  const reference = useQuery({ queryKey: ["reference"], queryFn: () => api.get("/reference") });
   const interests = reference.data?.interests ?? [];
   const online = presence.data?.count ?? null;
 

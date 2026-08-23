@@ -1,11 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import type { ConnectionView } from "../../lib/types";
 import { ApiError } from "../../lib/errors";
 import { onEvent } from "../../api/realtime";
-import { useEffect } from "react";
 import { useToast } from "../../state/toast";
 import { AppShell } from "../../components/shell";
 import { Avatar, Badge, Button, EmptyState, ErrorState, LoadingBlock, Modal } from "../../components/ui";
@@ -15,17 +13,17 @@ import { timeAgo } from "../../lib/utils";
 export default function ConnectionsPage() {
   const qc = useQueryClient();
   const { push } = useToast();
-  const [toRemove, setToRemove] = useState<ConnectionView | null>(null);
+  const [toRemove, setToRemove] = useState(null);
 
   useEffect(() => onEvent("connection:update", () => qc.invalidateQueries({ queryKey: ["connections"] })), [qc]);
 
   const q = useQuery({
     queryKey: ["connections"],
-    queryFn: () => api.get<{ items: ConnectionView[] }>("/connections"),
+    queryFn: () => api.get("/connections"),
   });
 
   const removeMut = useMutation({
-    mutationFn: (otherId: string) => api.del(`/connections/${otherId}`),
+    mutationFn: (otherId) => api.del(`/connections/${otherId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       setToRemove(null);
